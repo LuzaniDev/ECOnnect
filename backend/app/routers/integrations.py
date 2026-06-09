@@ -1,0 +1,188 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from uuid import UUID
+from ..database import get_db
+from ..deps import get_current_user, require_admin
+from ..models.user import User
+from ..models.integration import IntegrationConfig
+from ..schemas.integration import (
+    IntegrationConfigCreate,
+    IntegrationConfigUpdate,
+    IntegrationConfigResponse,
+    TriggerRequest,
+)
+from ..services.integration_service import IntegrationService
+from ..services.audit_service import log_action
+
+router = APIRouter(prefix="/api/integrations", tags=["integrations"])
+
+
+def _build_response(config: IntegrationConfig) -> dict:
+    return {
+        "id": config.id,
+        "template_id": config.template_id,
+        "template_name": config.template.name if config.template else "",
+        "name": config.name or "Manual",
+        "created_by": config.created_by,
+        "created_by_username": config.creator.username if config.creator else "",
+        "api_url": config.api_url,
+        "api_token": config.api_token,
+        "flow_id": config.flow_id,
+        "field_mapping": config.field_mapping,
+        "first_name_field": config.first_name_field or "1",
+        "manual_payload": config.manual_payload,
+        "manual_headers": config.manual_headers,
+        "is_active": config.is_active,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+        "schedule_enabled": config.schedule_enabled,
+        "schedule_preset": config.schedule_preset,
+        "schedule_days": config.schedule_days,
+        "schedule_time": config.schedule_time,
+        "last_run_at": config.last_run_at,
+        "next_run_at": config.next_run_at,
+        "type": config.type or "normal",
+    }
+
+
+@router.get("/", response_model=list[IntegrationConfigResponse])
+async def list_integrations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = IntegrationService(db)
+    configs = await service.list_all(eco_empresa=current_user.eco_empresa)
+    return [_build_response(c) for c in configs]
+
+
+@router.get("/template/{template_id}", response_model=IntegrationConfigResponse | None)
+async def get_integration_by_template(
+    template_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = IntegrationService(db)
+    config = await service.get_by_template(template_id, eco_empresa=current_user.eco_empresa)
+    if not config:
+        return None
+    return _build_response(config)
+
+
+@router.get("/{config_id}", response_model=IntegrationConfigResponse)
+async def get_integration(
+    config_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = IntegrationService(db)
+    config = await service.get_by_id(config_id, eco_empresa=current_user.eco_empresa)
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    return _build_response(config)
+
+
+async def _reload_config(db: AsyncSession, config_id: UUID) -> IntegrationConfig | None:
+    result = await db.execute(
+        select(IntegrationConfig)
+        .where(IntegrationConfig.id == config_id)
+        .options(
+            selectinload(IntegrationConfig.template),
+            selectinload(IntegrationConfig.creator),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+@router.post("/", response_model=IntegrationConfigResponse)
+async def create_integration(
+    data: IntegrationConfigCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    service = IntegrationService(db)
+    if data.template_id:
+        existing = await service.get_by_template(data.template_id, eco_empresa=current_user.eco_empresa)
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="Ja existe uma integracao para este template",
+            )
+    config = await service.create(data, current_user.id, eco_empresa=current_user.eco_empresa)
+    config = await _reload_config(db, config.id)
+    ip = request.client.host if request.client else None
+    await log_action(db, current_user.id, current_user.username,
+                     "create_integration", "integration", str(config.id),
+                     {"name": config.name, "api_url": config.api_url}, ip)
+    return _build_response(config)
+
+
+@router.put("/{config_id}", response_model=IntegrationConfigResponse)
+async def update_integration(
+    config_id: UUID,
+    data: IntegrationConfigUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    service = IntegrationService(db)
+    existing = await service.get_by_id(config_id, eco_empresa=current_user.eco_empresa)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    config = await service.update(config_id, data)
+    config = await _reload_config(db, config.id)
+    ip = request.client.host if request.client else None
+    await log_action(db, current_user.id, current_user.username,
+                     "update_integration", "integration", str(config.id),
+                     {"fields": list(data.model_dump(exclude_unset=True).keys())}, ip)
+    return _build_response(config)
+
+
+@router.delete("/{config_id}")
+async def delete_integration(
+    config_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    service = IntegrationService(db)
+    config_before = await service.get_by_id(config_id, eco_empresa=current_user.eco_empresa)
+    if not config_before:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    deleted = await service.delete(config_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    ip = request.client.host if request.client else None
+    await log_action(db, current_user.id, current_user.username,
+                     "delete_integration", "integration", str(config_id),
+                     {"name": config_before.name if config_before else None}, ip)
+    return {"detail": "Configuracao excluida"}
+
+
+@router.post("/{config_id}/trigger")
+async def trigger_integration(
+    config_id: UUID,
+    trigger_data: TriggerRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = IntegrationService(db)
+    existing = await service.get_by_id(config_id, eco_empresa=current_user.eco_empresa)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    try:
+        result = await service.trigger(
+            config_id,
+            override_payload=trigger_data.override_payload,
+            override_headers=trigger_data.override_headers,
+        )
+        ip = request.client.host if request.client else None
+        await log_action(db, current_user.id, current_user.username,
+                         "trigger_integration", "integration", str(config_id),
+                         {"result": result}, ip)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

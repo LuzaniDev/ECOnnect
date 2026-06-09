@@ -1,0 +1,29 @@
+# Backups - ignorar sempre (recuperar apenas sob demanda)
+backups/
+
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+.venv/
+
+# Logs
+*.log
+
+# Test files
+create_user.py
+test_*.py
+
+# Build outputs
+dist/
+build/
+ECOnnect.spec
+file_version_info.txt
+
+# Development scripts
+setup_dev.bat
+
+# Documentation
+docs_obsidian/

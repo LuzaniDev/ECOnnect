@@ -64,7 +64,7 @@ class FirebirdClient:
             raise
         return self._connection
 
-    def executar(self, sql: str, params: tuple | None = None):
+    def executar(self, sql: str, params: tuple | dict | None = None):
         conn = self.conectar()
         cursor = conn.cursor()
         try:
@@ -78,7 +78,7 @@ class FirebirdClient:
             conn.rollback()
             raise
 
-    def query(self, sql: str, params: tuple | None = None) -> list:
+    def query(self, sql: str, params: tuple | dict | None = None) -> list:
         conn = self.conectar()
         cursor = conn.cursor()
         try:
@@ -88,12 +88,16 @@ class FirebirdClient:
                 cursor.execute(sql)
             rows = cursor.fetchall()
             cursor.close()
+            conn.commit()
+            _log_fb(f"Query OK: {len(rows)} linhas")
             return rows
-        except Exception:
+        except Exception as e:
             cursor.close()
+            conn.rollback()
+            _log_fb(f"Query ERROR: {e}", "ERROR")
             raise
 
-    def executar_um(self, sql: str, params: tuple | None = None):
+    def executar_um(self, sql: str, params: tuple | dict | None = None):
         conn = self.conectar()
         cursor = conn.cursor()
         try:
@@ -110,7 +114,7 @@ class FirebirdClient:
             cursor.close()
             raise
 
-    def query_with_columns(self, sql: str, params: tuple | None = None) -> tuple[list[str], list[tuple]]:
+    def query_with_columns(self, sql: str, params: tuple | dict | None = None) -> tuple[list[str], list[tuple]]:
         conn = self.conectar()
         cursor = conn.cursor()
         try:

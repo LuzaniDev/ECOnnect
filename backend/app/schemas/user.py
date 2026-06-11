@@ -13,6 +13,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     eco_usuario: str | None = None
     eco_empresa: str | None = None
+    tab_permissions: list[str] | None = None
 
     class Config:
         from_attributes = True
@@ -23,3 +24,7 @@ class UserUpdate(BaseModel):
     role: str | None = None
     is_active: bool | None = None
     cobranca_cooldown_hours: int | None = None
+
+
+class UserPermissionsUpdate(BaseModel):
+    tab_permissions: list[str] | None = None

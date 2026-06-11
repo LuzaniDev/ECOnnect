@@ -1,3 +1,5 @@
+import os
+import json
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget,
@@ -10,12 +12,19 @@ from PySide6.QtWidgets import (
     QFrame,
     QScrollArea,
     QFormLayout,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
+from PySide6.QtGui import QColor
 from frontend.app.api.client import client
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
 from frontend.app.core.logger import logger
 from frontend.app.core.firebird_client import fb
+
+TAG_COOLDOWN_FILE = os.path.join(os.path.expanduser("~"), ".econnect", "tag_cooldown_config.json")
+TEMPLATES_FILE = os.path.join(os.path.expanduser("~"), ".econnect", "mundo_bots_templates.json")
 
 
 class UserSettingsView(QWidget):
@@ -23,6 +32,7 @@ class UserSettingsView(QWidget):
         super().__init__()
         self.token = token
         self.user = user
+        self._tag_spins = {}
         self._setup_ui()
 
     def _setup_ui(self):
@@ -66,10 +76,7 @@ class UserSettingsView(QWidget):
 
         layout.addWidget(user_info)
 
-        card = QFrame()
-        card.setObjectName("settingsCard")
-        card.setStyleSheet(
-            """
+        CARD_STYLE = """
             QFrame#settingsCard {
                 background-color: #161b22;
                 border: 1px solid #30363d;
@@ -87,53 +94,12 @@ class UserSettingsView(QWidget):
                 color: #8b949e;
                 padding-bottom: 14px;
             }
-            """
-        )
-        card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(6)
-
-        section = QLabel("Cooldown de Cobranca")
-        section.setObjectName("sectionTitle")
-        card_layout.addWidget(section)
-
-        desc = QLabel(
-            "Tempo minimo entre envios de cobranca para o mesmo numero. "
-            "Este limite e individual por usuario."
-        )
-        desc.setObjectName("sectionDesc")
-        desc.setWordWrap(True)
-        card_layout.addWidget(desc)
-
-        divider = QFrame()
-        divider.setStyleSheet("QFrame { max-height: 1px; min-height: 1px; background-color: #30363d; border: none; }")
-        card_layout.addWidget(divider)
-
-        form = QFormLayout()
-        form.setSpacing(8)
-
-        self.cooldown_spin = QSpinBox()
-        self.cooldown_spin.setRange(0, 720)
-        self.cooldown_spin.setSuffix(" horas")
-        self.cooldown_spin.setValue(self.user.get("cobranca_cooldown_hours", 48))
-        self.cooldown_spin.setMinimumHeight(34)
-        self.cooldown_spin.setMinimumWidth(140)
-        form.addRow("Intervalo minimo:", self.cooldown_spin)
-        card_layout.addLayout(form)
-
-        card_layout.addSpacing(6)
-        btn_save = QPushButton("Salvar Configuracoes")
-        btn_save.setProperty("accent", True)
-        btn_save.setCursor(Qt.PointingHandCursor)
-        btn_save.clicked.connect(self._save)
-        card_layout.addWidget(btn_save)
-
-        card_layout.addStretch()
-        layout.addWidget(card)
+        """
 
         # --- Firebird config card ---
         fb_card = QFrame()
         fb_card.setObjectName("settingsCard")
-        fb_card.setStyleSheet(card.styleSheet())
+        fb_card.setStyleSheet(CARD_STYLE)
         fb_card_layout = QVBoxLayout(fb_card)
         fb_card_layout.setSpacing(6)
 
@@ -189,14 +155,159 @@ class UserSettingsView(QWidget):
 
         fb_card_layout.addStretch()
         layout.addWidget(fb_card)
+
+        # --- Tag Cooldown config card ---
+        tag_card = QFrame()
+        tag_card.setObjectName("settingsCard")
+        tag_card.setStyleSheet(CARD_STYLE)
+        tag_card_layout = QVBoxLayout(tag_card)
+        tag_card_layout.setSpacing(6)
+
+        tag_section = QLabel("Cooldown por Tag")
+        tag_section.setObjectName("sectionTitle")
+        tag_card_layout.addWidget(tag_section)
+
+        tag_desc = QLabel(
+            "Defina o tempo de bloqueio (em horas) para cada tag. "
+            "As tags sao carregadas automaticamente dos templates existentes. "
+            "Quando uma mensagem com a tag for enviada para um cliente, "
+            "ele nao podera receber outra com a mesma tag ate que o cooldown expire."
+        )
+        tag_desc.setObjectName("sectionDesc")
+        tag_desc.setWordWrap(True)
+        tag_card_layout.addWidget(tag_desc)
+
+        tag_divider = QFrame()
+        tag_divider.setStyleSheet("QFrame { max-height: 1px; min-height: 1px; background-color: #30363d; border: none; }")
+        tag_card_layout.addWidget(tag_divider)
+
+        self.tag_table = QTableWidget()
+        self.tag_table.setColumnCount(2)
+        self.tag_table.setHorizontalHeaderLabels(["TAG", "BLOQUEIO (HORAS)"])
+        self.tag_table.horizontalHeader().setStretchLastSection(True)
+        self.tag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tag_table.setSelectionMode(QTableWidget.NoSelection)
+        self.tag_table.setShowGrid(False)
+        self.tag_table.setMinimumHeight(80)
+        self.tag_table.verticalHeader().setDefaultSectionSize(28)
+        self.tag_table.verticalHeader().setVisible(False)
+        self.tag_table.setStyleSheet("""
+            QTableWidget {
+                background: transparent;
+                border: none;
+                font-size: 12px;
+                color: #c9d1d9;
+            }
+            QTableWidget::item {
+                padding: 2px 4px;
+                border-bottom: 1px solid #21262d;
+            }
+            QHeaderView::section {
+                background: transparent;
+                color: #8b949e;
+                font-size: 10px;
+                font-weight: 700;
+                border: none;
+                padding: 2px 0;
+            }
+        """)
+        tag_card_layout.addWidget(self.tag_table)
+
+        tag_card_layout.addSpacing(6)
+        btn_save_tags = QPushButton("Salvar Cooldown das Tags")
+        btn_save_tags.setProperty("accent", True)
+        btn_save_tags.setCursor(Qt.PointingHandCursor)
+        btn_save_tags.clicked.connect(self._save_tag_cooldowns)
+        tag_card_layout.addWidget(btn_save_tags)
+
+        layout.addWidget(tag_card)
         layout.addStretch()
 
         scroll.setWidget(container)
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(scroll)
 
-        # Load current Firebird config
+        # Load configs
         self._load_fb_config()
+        self._load_tag_cooldown_table()
+
+    def _get_all_template_tags(self) -> list:
+        tags = set()
+        try:
+            if os.path.exists(TEMPLATES_FILE):
+                with open(TEMPLATES_FILE, "r", encoding="utf-8") as f:
+                    templates = json.load(f)
+                for t in templates:
+                    tag = t.get("tag", "").strip()
+                    if tag:
+                        tags.add(tag)
+        except Exception:
+            pass
+        return sorted(tags)
+
+    def _load_tag_cooldown_table(self):
+        self.tag_table.setRowCount(0)
+        config = self._load_tag_cooldown_config()
+        all_tags = self._get_all_template_tags()
+
+        self._tag_spins = {}
+        if all_tags:
+            for tag in all_tags:
+                row = self.tag_table.rowCount()
+                self.tag_table.insertRow(row)
+
+                item = QTableWidgetItem(tag)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setForeground(QColor("#c9d1d9"))
+                self.tag_table.setItem(row, 0, item)
+
+                val = config.get(tag, 0)
+                spin = QSpinBox()
+                spin.setRange(0, 7200)
+                spin.setValue(val)
+                spin.setSuffix(" horas")
+                spin.setFixedHeight(22)
+                spin.setMinimumWidth(80)
+                spin.setStyleSheet("""
+                    QSpinBox { background: #0d1117; border: 1px solid #30363d;
+                        border-radius: 3px; padding: 0px 2px; color: #c9d1d9;
+                        font-size: 11px; }
+                """)
+                self.tag_table.setCellWidget(row, 1, spin)
+                self._tag_spins[tag] = spin
+
+            self.tag_table.setVisible(True)
+        else:
+            self.tag_table.setRowCount(1)
+            self.tag_table.setSpan(0, 0, 1, 2)
+            item = QTableWidgetItem("Nenhuma tag encontrada. Crie templates com tags primeiro.")
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            item.setForeground(QColor("#8b949e"))
+            self.tag_table.setItem(0, 0, item)
+
+    def _load_tag_cooldown_config(self) -> dict:
+        try:
+            if os.path.exists(TAG_COOLDOWN_FILE):
+                with open(TAG_COOLDOWN_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_tag_cooldown_config(self, config: dict):
+        try:
+            os.makedirs(os.path.dirname(TAG_COOLDOWN_FILE), exist_ok=True)
+            with open(TAG_COOLDOWN_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _save_tag_cooldowns(self):
+        config = {}
+        for tag, spin in self._tag_spins.items():
+            config[tag] = spin.value()
+        self._save_tag_cooldown_config(config)
+        show_success(self, "OK", "Cooldown das tags salvo com sucesso!")
 
     def _load_fb_config(self):
         eco_empresa = self.user.get("eco_empresa")
@@ -248,33 +359,11 @@ class UserSettingsView(QWidget):
         )
         return result
 
-    def _save(self):
-        data = {
-            "cobranca_cooldown_hours": self.cooldown_spin.value(),
-        }
-        logger.info("SETTINGS", "Salvando configuracoes", cooldown=data["cobranca_cooldown_hours"])
-        run_in_thread(
-            self._update_user,
-            lambda r: (
-                logger.info("SETTINGS", "Configuracoes salvas com sucesso"),
-                show_success(self, "OK", "Configuracoes salvas!"),
-            ),
-            lambda e: show_error(self, "Erro", str(e)),
-            self.user["id"],
-            data,
-        )
-
-    def _update_user(self, user_id: str, data: dict) -> dict:
-        from frontend.app.api.user_api import update_user
-        result = update_user(user_id, data)
-        client.set_token(client._token)
-        return result
-
     def refresh(self):
         from frontend.app.api.user_api import list_users
         users = list_users()
         for u in users:
             if u["id"] == self.user["id"]:
                 self.user.update(u)
-                self.cooldown_spin.setValue(u.get("cobranca_cooldown_hours", 48))
                 break
+        self._load_tag_cooldown_table()

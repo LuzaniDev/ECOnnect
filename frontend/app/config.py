@@ -17,7 +17,8 @@ load_dotenv(_resolve_env())
 
 
 class Settings:
-    API_URL: str = os.getenv("ECONNECT_API_URL", "http://127.0.0.1:9899")
+    _econnect_port = os.getenv("ECONNECT_PORT", "9899")
+    API_URL: str = os.getenv("ECONNECT_API_URL") or f"http://127.0.0.1:{_econnect_port}"
 
     FB_DATABASE: str | None = os.getenv("FB_DATABASE")
     FB_USER: str | None = os.getenv("FB_USER")

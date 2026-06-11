@@ -6,8 +6,8 @@ from pydantic import BaseModel
 class CompanyConfigCreate(BaseModel):
     company_code: str
     fb_database: str
-    fb_user: str = "SYSDBA"
-    fb_password: str = "masterkey"
+    fb_user: str
+    fb_password: str
 
 
 class CompanyConfigUpdate(BaseModel):

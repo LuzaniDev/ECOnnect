@@ -5,7 +5,7 @@ from uuid import UUID
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models.user import User
-from ..schemas.user import UserResponse, UserUpdate
+from ..schemas.user import UserResponse, UserUpdate, UserPermissionsUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -40,6 +40,24 @@ async def update_user(
     if data.cobranca_cooldown_hours is not None:
         user.cobranca_cooldown_hours = data.cobranca_cooldown_hours
 
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.put("/{user_id}/permissions", response_model=UserResponse)
+async def update_user_permissions(
+    user_id: UUID,
+    data: UserPermissionsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.tab_permissions = data.tab_permissions
     await db.commit()
     await db.refresh(user)
     return user

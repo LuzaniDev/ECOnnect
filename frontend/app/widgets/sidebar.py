@@ -105,21 +105,34 @@ QWidget#sidebar QPushButton#logout_btn:hover {
 }
 """
 
+ALL_TABS = {
+    "dashboard": {"label": "Dashboard", "group": "Navegação"},
+    "requisicoes": {"label": "Requisições", "group": "Requisições"},
+    "templates": {"label": "Modelos", "group": "Requisições"},
+    "mundo_bots": {"label": "Mundo dos Bots", "group": "Mundo dos Bots"},
+    "configuracoes": {"label": "Configurações", "group": "Administração"},
+    "admin_tabs": {"label": "Gerenciar Abas", "group": "Administração"},
+    "logs": {"label": "Logs do Sistema", "group": "Administração"},
+}
+
 
 class Sidebar(QFrame):
     nav_dashboard = Signal()
+    nav_requisicoes = Signal()
+    nav_templates = Signal()
     nav_mundo_bots = Signal()
     nav_settings = Signal()
     nav_logout = Signal()
     nav_logs = Signal()
+    nav_admin_tabs = Signal()
 
-    def __init__(self, username: str, role: str):
+    def __init__(self, username: str, role: str, permitted_tabs: list[str] | None = None):
         super().__init__()
         self.setObjectName("sidebar")
         self.setStyleSheet(SIDEBAR_STYLE)
-        self._build_ui(username, role)
+        self._build_ui(username, role, permitted_tabs)
 
-    def _build_ui(self, username: str, role: str):
+    def _build_ui(self, username: str, role: str, permitted_tabs: list[str] | None = None):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -164,59 +177,57 @@ class Sidebar(QFrame):
         role_label.setObjectName("user_role")
         layout.addWidget(role_label)
 
-        group_nav = QLabel("Navegacao")
-        group_nav.setObjectName("nav_group")
-        group_nav.setStyleSheet("""
-            QLabel {
-                font-size: 9px;
-                color: #8b949e;
-                padding: 12px 14px 4px 14px;
-                text-transform: uppercase;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-            }
-        """)
-        layout.addWidget(group_nav)
+        is_admin = role == "admin"
 
-        btn_dashboard = self._make_button(
-            "Dashboard", "nav_dashboard_btn", self.nav_dashboard
-        )
-        layout.addWidget(btn_dashboard)
+        nav_items = [
+            ("dashboard", self.nav_dashboard),
+            ("requisicoes", self.nav_requisicoes),
+            ("templates", self.nav_templates),
+            ("mundo_bots", self.nav_mundo_bots),
+        ]
+        if is_admin:
+            nav_items.append(("configuracoes", self.nav_settings))
+            nav_items.append(("logs", self.nav_logs))
+            nav_items.append(("admin_tabs", self.nav_admin_tabs))
 
-        group_integ = QLabel("Integracoes")
-        group_integ.setObjectName("nav_group")
-        group_integ.setStyleSheet("""
-            QLabel {
-                font-size: 9px;
-                color: #8b949e;
-                padding: 12px 14px 4px 14px;
-                text-transform: uppercase;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-            }
-        """)
-        layout.addWidget(group_integ)
+        tab_perms = set(permitted_tabs or []) if not is_admin else None
 
-        btn_mundo_bots = self._make_button(
-            "Mundo dos Bots", "nav_mundo_bots_btn", self.nav_mundo_bots
-        )
-        layout.addWidget(btn_mundo_bots)
+        current_group = None
+        for key, signal in nav_items:
+            if tab_perms is not None and key not in tab_perms:
+                continue
+
+            info = ALL_TABS.get(key, {})
+            group = info.get("group")
+
+            if group != current_group:
+                if current_group is not None:
+                    layout.addSpacing(4)
+                current_group = group
+                if group:
+                    group_label = QLabel(group)
+                    group_label.setObjectName("nav_group")
+                    group_label.setStyleSheet("""
+                        QLabel {
+                            font-size: 9px;
+                            color: #8b949e;
+                            padding: 12px 14px 4px 14px;
+                            text-transform: uppercase;
+                            font-weight: 600;
+                            letter-spacing: 0.5px;
+                        }
+                    """)
+                    layout.addWidget(group_label)
+
+            btn = self._make_button(
+                info.get("label", key), f"nav_{key}_btn", signal
+            )
+            layout.addWidget(btn)
 
         layout.addStretch()
 
-        if role == "admin":
-            btn_settings = self._make_button(
-                "Configuracoes", "nav_settings_btn", self.nav_settings
-            )
-            layout.addWidget(btn_settings)
-
-            btn_logs = self._make_button(
-                "Logs do Sistema", "nav_logs_btn", self.nav_logs
-            )
-            layout.addWidget(btn_logs)
-
         btn_logout = self._make_button(
-            "Fechar ECOnnect", "logout_btn", self.nav_logout
+            "Sair", "logout_btn", self.nav_logout
         )
         layout.addWidget(btn_logout)
 

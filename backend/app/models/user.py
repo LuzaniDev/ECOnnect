@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
 from ..database import Base
 
@@ -20,6 +20,7 @@ class User(Base):
 
     eco_usuario = Column(String(50), nullable=True, index=True)
     eco_empresa = Column(String(20), nullable=True)
+    tab_permissions = Column(JSON, nullable=True)
 
     templates = relationship("Template", back_populates="creator")
     requests = relationship("Request", back_populates="creator")

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .database import engine, Base, async_session
-from .routers import auth, templates, requests, users, integrations, audit, company_config, sql_variables, dashboard
+from .routers import auth, templates, requests, users, integrations, audit, company_config, sql_variables, dashboard, cobranca
 from .models.integration import IntegrationConfig
 from .models.audit_log import AuditLog
 from .services.integration_service import IntegrationService
@@ -219,6 +219,22 @@ async def _run_migrations():
         except Exception:
             await session.rollback()
 
+    # Migration for tab_permissions column (v1.0.1)
+    async with async_session() as session:
+        try:
+            result = await session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'users'
+            """))
+            existing = {row[0] for row in result.fetchall()}
+            if 'tab_permissions' not in existing:
+                await session.execute(text(
+                    "ALTER TABLE users ADD COLUMN tab_permissions JSON"
+                ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
     # Migration for company_configs table (Item 4)
     async with async_session() as session:
         try:
@@ -400,6 +416,7 @@ app.include_router(audit.router)
 app.include_router(company_config.router)
 app.include_router(sql_variables.router)
 app.include_router(dashboard.router)
+app.include_router(cobranca.router)
 
 
 @app.get("/health")

@@ -219,6 +219,56 @@ class IntegrationService:
 
             await self.db.commit()
             result_msg = {"sent": sent_count, "total": len(pending)}
+        elif config.type == "ia":
+            payload = override_payload if override_payload is not None else (config.manual_payload or "")
+
+            try:
+                json.loads(payload)
+            except json.JSONDecodeError:
+                raise ValueError(
+                    "JSON invalido no corpo da requisicao. "
+                    "Verifique se todas as chaves e valores estao formatados corretamente "
+                    '(exemplo: use "{{var}}" em vez de {{var}}).'
+                )
+
+            async with httpx.AsyncClient(timeout=600) as client:
+                response = await client.post(
+                    config.api_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            result_msg = {
+                "ai_response": result.get("response", ""),
+                "model": result.get("model", ""),
+                "total_duration": result.get("total_duration", 0),
+                "done": result.get("done", True),
+            }
+        elif config.type == "n8n":
+            payload = override_payload if override_payload is not None else (config.manual_payload or "")
+            headers = override_headers if override_headers is not None else dict(config.manual_headers or {})
+            headers.setdefault("Content-Type", "application/json")
+
+            try:
+                json.loads(payload)
+            except json.JSONDecodeError:
+                raise ValueError(
+                    "JSON invalido no corpo da requisicao. "
+                    "Verifique se todas as chaves e valores estao formatados corretamente "
+                    '(exemplo: use "{{var}}" em vez de {{var}}).'
+                )
+
+            async with httpx.AsyncClient(timeout=1200) as client:
+                response = await client.post(
+                    config.api_url,
+                    data=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+
+            result_msg = {"sent": 1, "total": 1, "response": response.json()}
         else:
             payload = override_payload if override_payload is not None else (config.manual_payload or "")
             headers = override_headers if override_headers is not None else dict(config.manual_headers or {})

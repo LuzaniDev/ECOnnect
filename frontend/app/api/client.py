@@ -41,5 +41,14 @@ class ApiClient:
     def delete(self, path: str) -> httpx.Response:
         return self._client.delete(f"{self.base_url}{path}", headers=self._headers)
 
+    def stream_post(self, path: str, data: dict | None = None):
+        body = data or {}
+        return self._client.stream(
+            "POST",
+            f"{self.base_url}{path}",
+            json=body,
+            headers=self._headers,
+        )
+
 
 client = ApiClient()

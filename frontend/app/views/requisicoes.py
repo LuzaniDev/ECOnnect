@@ -1,14 +1,16 @@
+import html
 import json
 import re
 from datetime import datetime
-from PySide6.QtCore import Qt
+import httpx
+from PySide6.QtCore import Qt, QThread, Signal, QObject
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QFrame, QScrollArea, QTableWidget, QTableWidgetItem,
-    QHeaderView, QLineEdit, QTextEdit, QCheckBox, QTabWidget,
+    QHeaderView, QLineEdit, QTextEdit, QTextBrowser, QCheckBox, QTabWidget,
     QDialog, QDialogButtonBox, QFormLayout, QTimeEdit, QListWidget,
-    QListWidgetItem,
+    QListWidgetItem, QProgressBar, QScrollBar,
 )
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success, InputDialog
@@ -183,6 +185,539 @@ class TriggerVariablesDialog(QDialog):
         return result
 
 
+class AIResponseDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
+    def __init__(self, response_text: str, model: str = "", duration_secs: float = 0.0, parent=None):
+        super().__init__(parent)
+        self._response_text = response_text
+        self._model = model
+        self._duration_secs = duration_secs
+        self._links = []
+        self.setWindowTitle("Resposta da IA")
+        self.setMinimumSize(640, 520)
+        self.setStyleSheet(f"QDialog {{ background-color: {self._t.bg}; color: {self._t.text}; }}")
+        self._build()
+
+    def _markdown_to_html(self, text: str) -> str:
+        lines = text.split("\n")
+        html_parts = []
+        in_list = False
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            if stripped.startswith("### "):
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                html_parts.append(f"<h3>{stripped[4:]}</h3>")
+            elif stripped.startswith("## "):
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                html_parts.append(f"<h2>{stripped[3:]}</h2>")
+            elif stripped.startswith("# "):
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                html_parts.append(f"<h1>{stripped[2:]}</h1>")
+            elif stripped == "---":
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                html_parts.append("<hr>")
+            elif stripped.startswith("* ") or stripped.startswith("- "):
+                content = stripped[2:]
+                content = self._inline_html(content)
+                if not in_list:
+                    html_parts.append("<ul>")
+                    in_list = True
+                html_parts.append(f"<li>{content}</li>")
+            elif stripped.startswith("1. ") or stripped.startswith("2. ") or stripped.startswith("3. "):
+                content = stripped[3:]
+                content = self._inline_html(content)
+                if not in_list:
+                    html_parts.append("<ol>")
+                    in_list = True
+                html_parts.append(f"<li>{content}</li>")
+            elif stripped == "":
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                html_parts.append("<br>")
+            else:
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                processed = self._inline_html(stripped)
+                html_parts.append(f"<p>{processed}</p>")
+            i += 1
+
+        if in_list:
+            html_parts.append("</ul>")
+
+        return "\n".join(html_parts)
+
+    def _inline_html(self, text: str) -> str:
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        text = text.replace('"', "&quot;")
+
+        def replace_bold(m):
+            return f"<b>{m.group(1)}</b>"
+
+        def replace_link(m):
+            link_text = m.group(1)
+            url = m.group(2)
+            self._links.append((link_text, url))
+            return f'<a href="{url}" style="color: {self._t.accent_blue}; text-decoration: underline;">{link_text}</a>'
+
+        text = re.sub(r'\*\*(.+?)\*\*', replace_bold, text)
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
+
+        url_pattern = re.compile(r'(https?://[^\s\)]+)')
+        text = url_pattern.sub(r'<a href="\1" style="color: {0}; text-decoration: underline;">\1</a>'.format(self._t.accent_blue), text)
+
+        return text
+
+    def _build(self):
+        t = self._t
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        title = QLabel("Resposta da IA")
+        title.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {t.text};")
+        layout.addWidget(title)
+
+        html_content = self._markdown_to_html(self._response_text)
+        html_doc = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: {t.text}; background-color: {t.bg}; line-height: 1.6;">
+{html_content}
+</body>
+</html>"""
+
+        browser = QTextBrowser()
+        browser.setHtml(html_doc)
+        browser.setOpenExternalLinks(True)
+        browser.setStyleSheet(f"QTextBrowser {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 16px; color: {t.text}; }}")
+        browser.setMinimumHeight(280)
+        layout.addWidget(browser, 1)
+
+        if self._links:
+            ref_frame = QFrame()
+            ref_frame.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 12px; }}")
+            ref_layout = QVBoxLayout(ref_frame)
+            ref_layout.setContentsMargins(12, 10, 12, 10)
+            ref_layout.setSpacing(6)
+            ref_title = QLabel("Referências")
+            ref_title.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {t.text};")
+            ref_layout.addWidget(ref_title)
+            for link_text, url in self._links:
+                link_label = QLabel(f'<a href="{url}" style="color: {t.accent_blue}; font-size: 12px;">{link_text}</a>')
+                link_label.setOpenExternalLinks(True)
+                link_label.setWordWrap(True)
+                ref_layout.addWidget(link_label)
+            layout.addWidget(ref_frame)
+
+        footer = QFrame()
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        meta_parts = []
+        if self._model:
+            meta_parts.append(f"Modelo: {self._model}")
+        if self._duration_secs > 0:
+            meta_parts.append(f"Duração: {self._duration_secs:.1f}s")
+        meta_text = " | ".join(meta_parts) if meta_parts else ""
+        if meta_text:
+            meta_label = QLabel(meta_text)
+            meta_label.setStyleSheet(f"color: {t.text_secondary}; font-size: 11px;")
+            footer_layout.addWidget(meta_label)
+        footer_layout.addStretch()
+        btn_close = QPushButton("Fechar")
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet(f"QPushButton {{ background-color: {t.primary}; color: {t.selection_text}; border: none; border-radius: 4px; padding: 8px 20px; font-size: 13px; font-weight: 600; }} QPushButton:hover {{ background-color: {t.primary_hover}; }}")
+        btn_close.clicked.connect(self.accept)
+        footer_layout.addWidget(btn_close)
+        layout.addWidget(footer)
+
+
+class N8nResponseDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
+    def __init__(self, data: dict, parent=None):
+        super().__init__(parent)
+        self._data = data
+        self.setWindowTitle("Resposta n8n")
+        self.setMinimumSize(640, 520)
+        self.setStyleSheet(f"QDialog {{ background-color: {self._t.bg}; color: {self._t.text}; }}")
+        self._build()
+
+    def _build(self):
+        t = self._t
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("Resposta do n8n")
+        title.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {t.text};")
+        layout.addWidget(title)
+
+        base = self._data.get("base_conhecimento", [])
+        uar = self._data.get("uar_solicitacoes", [])
+        total_base = self._data.get("total_base", 0)
+        total_uar = self._data.get("total_uar", 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        container = QWidget()
+        container.setStyleSheet(f"background: transparent;")
+        sections = QVBoxLayout(container)
+        sections.setSpacing(16)
+
+        if base:
+            base_frame = self._make_section(
+                "Base de Conhecimento", base, total_base, t
+            )
+            sections.addWidget(base_frame)
+
+        if uar:
+            uar_frame = self._make_section(
+                "UAR Solicitações", uar, total_uar, t
+            )
+            sections.addWidget(uar_frame)
+
+        if not base and not uar:
+            raw = json.dumps(self._data, indent=2, ensure_ascii=False)
+            browser = QTextBrowser()
+            browser.setPlainText(raw)
+            browser.setStyleSheet(f"QTextBrowser {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 14px; font-size: 12px; color: {t.text}; font-family: 'Consolas', monospace; }}")
+            browser.setMinimumHeight(200)
+            sections.addWidget(browser)
+
+        sections.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+
+        footer = QHBoxLayout()
+        if total_base or total_uar:
+            info = QLabel(f"Total: {total_base} base(s) | {total_uar} UAR")
+            info.setStyleSheet(f"color: {t.text_secondary}; font-size: 12px;")
+            footer.addWidget(info)
+        footer.addStretch()
+        btn_close = QPushButton("Fechar")
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet(f"QPushButton {{ background-color: {t.primary}; color: {t.selection_text}; border: none; border-radius: 4px; padding: 8px 20px; font-size: 13px; font-weight: 600; }} QPushButton:hover {{ background-color: {t.primary_hover}; }}")
+        btn_close.clicked.connect(self.accept)
+        footer.addWidget(btn_close)
+        layout.addLayout(footer)
+
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        text = html.unescape(text)
+        text = re.sub(r"<[^>]+>", "", text)
+        return text.strip()
+
+    def _make_section(self, section_title: str, items: list, total: int, t) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; }}")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        header = QLabel(f"{section_title} ({total})")
+        header.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {t.text};")
+        layout.addWidget(header)
+
+        for item in items:
+            titulo = self._clean_text(item.get("titulo", ""))
+            link = self._clean_text(item.get("link", ""))
+            if not titulo:
+                continue
+            card = QFrame()
+            card.setStyleSheet(f"QFrame {{ background-color: {t.bg}; border: 1px solid {t.surface_elevated}; border-radius: 4px; padding: 8px; }}")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(10, 8, 10, 8)
+            card_layout.setSpacing(4)
+
+            lbl_titulo = QLabel(titulo)
+            lbl_titulo.setWordWrap(True)
+            lbl_titulo.setStyleSheet(f"font-size: 12px; color: {t.text}; font-weight: 600;")
+            card_layout.addWidget(lbl_titulo)
+
+            if link and link != "#" and not link.startswith("#"):
+                lbl_link = QLabel(f'<a href="{link}" style="color: {t.accent_blue}; font-size: 11px;">{link}</a>')
+                lbl_link.setOpenExternalLinks(True)
+                lbl_link.setWordWrap(True)
+                card_layout.addWidget(lbl_link)
+
+            layout.addWidget(card)
+
+        return frame
+
+
+class N8nWorker(QObject):
+    finished = Signal(object)
+    error_occurred = Signal(str)
+
+    def __init__(self, config_id, overrides):
+        super().__init__()
+        self.config_id = config_id
+        self.overrides = overrides
+        self._aborted = False
+
+    def abort(self):
+        self._aborted = True
+
+    def run(self):
+        if self._aborted:
+            return
+        try:
+            result = integration_api.trigger_integration(self.config_id, self.overrides)
+            if not self._aborted:
+                self.finished.emit(result)
+        except Exception as e:
+            if not self._aborted:
+                self.error_occurred.emit(str(e))
+
+
+class N8nLoadingDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
+    def __init__(self, config_id, overrides, parent=None):
+        super().__init__(parent)
+        self._config_id = config_id
+        self._overrides = overrides
+        self._result = None
+        self.setWindowTitle("n8n - Aguardando resposta...")
+        self.setMinimumSize(480, 200)
+        t = self._t
+        self.setStyleSheet(f"QDialog {{ background-color: {t.bg}; color: {t.text}; }}")
+        self._build()
+        self._start_worker()
+
+    def _build(self):
+        t = self._t
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("Aguardando resposta do n8n...")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {t.text};")
+        layout.addWidget(title)
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)
+        self._progress.setFixedHeight(20)
+        self._progress.setStyleSheet(f"""
+            QProgressBar {{ background-color: {t.surface}; border: 1px solid {t.border};
+                border-radius: 4px; text-align: center; font-size: 10px; color: {t.text_secondary}; }}
+            QProgressBar::chunk {{ background-color: {t.primary}; border-radius: 3px; }}
+        """)
+        layout.addWidget(self._progress)
+
+        btn_layout = QHBoxLayout()
+        self._btn_cancel = QPushButton("Cancelar")
+        self._btn_cancel.setCursor(Qt.PointingHandCursor)
+        self._btn_cancel.setStyleSheet(f"QPushButton {{ background: transparent; border: 1px solid {t.danger}; border-radius: 4px; padding: 8px 18px; font-size: 12px; color: {t.danger}; }} QPushButton:hover {{ background-color: {t.danger}22; }}")
+        self._btn_cancel.clicked.connect(self._cancel)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self._btn_cancel)
+        layout.addLayout(btn_layout)
+
+    def _start_worker(self):
+        self._worker = N8nWorker(self._config_id, self._overrides)
+        self._thread = QThread(self)
+        self._worker.moveToThread(self._thread)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.error_occurred.connect(self._on_error)
+        self._thread.started.connect(self._worker.run)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.start()
+
+    def _on_finished(self, result):
+        self._result = result
+        self._thread.quit()
+        self._worker.deleteLater()
+        self.accept()
+
+    def _on_error(self, error):
+        self._thread.quit()
+        self._worker.deleteLater()
+        show_error(self, "Erro", error)
+        self.reject()
+
+    def _cancel(self):
+        self._worker.abort()
+        self._thread.quit()
+        self._worker.deleteLater()
+        self.reject()
+
+    def get_result(self):
+        return self._result
+
+
+class StreamWorker(QObject):
+    token_received = Signal(str)
+    finished = Signal(str, str, float)
+    error_occurred = Signal(str)
+
+    def __init__(self, config_id, overrides):
+        super().__init__()
+        self.config_id = config_id
+        self.overrides = overrides
+        self._aborted = False
+
+    def abort(self):
+        self._aborted = True
+
+    def run(self):
+        try:
+            from frontend.app.api.client import client as api_client
+
+            url = f"{api_client.base_url}/api/integrations/{self.config_id}/trigger-stream"
+            headers = {"Content-Type": "application/json"}
+            if api_client._token:
+                headers["Authorization"] = f"Bearer {api_client._token}"
+
+            with httpx.Client(timeout=600) as http:
+                with http.stream("POST", url, json=self.overrides, headers=headers) as resp:
+                    resp.raise_for_status()
+                    full_text = ""
+                    model = ""
+                    duration = 0
+
+                    for line in resp.iter_lines():
+                        if self._aborted:
+                            return
+                        if not line:
+                            continue
+                        if line.startswith("data: "):
+                            data = json.loads(line[6:])
+                            if data.get("done"):
+                                full_text = data.get("full_response", full_text)
+                                model = data.get("model", model)
+                                duration = data.get("total_duration", duration)
+                                self.finished.emit(full_text, model, duration / 1_000_000_000.0)
+                                return
+                            if "error" in data:
+                                self.error_occurred.emit(data["error"])
+                                return
+                            token = data.get("token", "")
+                            full_text += token
+                            self.token_received.emit(token)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+
+class StreamDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
+    def __init__(self, config_id, overrides, parent=None):
+        super().__init__(parent)
+        self._config_id = config_id
+        self._overrides = overrides
+        self._result = None
+        self.setWindowTitle("IA - Gerando Resposta...")
+        self.setMinimumSize(620, 420)
+        t = self._t
+        self.setStyleSheet(f"QDialog {{ background-color: {t.bg}; color: {t.text}; }}")
+        self._build()
+        self._start_stream()
+
+    def _build(self):
+        t = self._t
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        header = QHBoxLayout()
+        title = QLabel("Gerando resposta com IA...")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {t.text};")
+        header.addWidget(title)
+        header.addStretch()
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)
+        self._progress.setFixedWidth(160)
+        self._progress.setFixedHeight(20)
+        self._progress.setStyleSheet(f"""
+            QProgressBar {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 4px; text-align: center; font-size: 10px; color: {t.text_secondary}; }}
+            QProgressBar::chunk {{ background-color: {t.primary}; border-radius: 3px; }}
+        """)
+        header.addWidget(self._progress)
+        layout.addLayout(header)
+
+        self._text_edit = QTextEdit()
+        self._text_edit.setReadOnly(True)
+        self._text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {t.surface}; border: 1px solid {t.border};
+                border-radius: 6px; padding: 14px; font-size: 13px;
+                color: {t.text}; font-family: 'Segoe UI', Arial, sans-serif;
+            }}
+        """)
+        self._text_edit.setMinimumHeight(280)
+        layout.addWidget(self._text_edit, 1)
+
+        btn_layout = QHBoxLayout()
+        self._btn_cancel = QPushButton("Cancelar")
+        self._btn_cancel.setCursor(Qt.PointingHandCursor)
+        self._btn_cancel.setStyleSheet(f"QPushButton {{ background: transparent; border: 1px solid {t.danger}; border-radius: 4px; color: {t.danger}; padding: 8px 20px; font-size: 13px; font-weight: 600; }} QPushButton:hover {{ background: {t.danger}; color: {t.selection_text}; }}")
+        self._btn_cancel.clicked.connect(self._cancel)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self._btn_cancel)
+        layout.addLayout(btn_layout)
+
+    def _start_stream(self):
+        self._worker = StreamWorker(self._config_id, self._overrides)
+        self._thread = QThread(self)
+        self._worker.moveToThread(self._thread)
+        self._worker.token_received.connect(self._on_token)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.error_occurred.connect(self._on_error)
+        self._thread.started.connect(self._worker.run)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.start()
+
+    def _on_token(self, token):
+        self._text_edit.insertPlainText(token)
+        sb = self._text_edit.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _on_finished(self, full_text, model, duration):
+        self._result = (full_text, model, duration)
+        self._thread.quit()
+        self._worker.deleteLater()
+        self.accept()
+
+    def _on_error(self, error):
+        self._thread.quit()
+        self._worker.deleteLater()
+        show_error(self, "Erro", error)
+        self.reject()
+
+    def _cancel(self):
+        self._worker.abort()
+        self._thread.quit()
+        self._worker.deleteLater()
+        self.reject()
+
+    def get_result(self):
+        return self._result
+
+
 class InterfaceEditorDialog(QDialog):
     @property
     def _t(self):
@@ -275,9 +810,13 @@ class InterfaceEditorDialog(QDialog):
         type_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         type_row.addWidget(type_label)
         self.edit_type = QComboBox()
-        self.edit_type.addItems(["Normal", "Cobranca"])
+        self.edit_type.addItems(["Normal", "Cobranca", "IA", "n8n"])
         if self._integration_type == "cobranca":
             self.edit_type.setCurrentText("Cobranca")
+        elif self._integration_type == "ia":
+            self.edit_type.setCurrentText("IA")
+        elif self._integration_type == "n8n":
+            self.edit_type.setCurrentText("n8n")
         self.edit_type.setStyleSheet(f"QComboBox {{ background-color: {t.bg}; border: 1px solid {t.border}; border-radius: 4px; padding: 6px; font-size: 12px; color: {t.text}; min-width: 120px; }} QComboBox::drop-down {{ border: none; width: 24px; }} QComboBox::down-arrow {{ border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {t.text_secondary}; margin-right: 4px; }}")
         type_row.addWidget(self.edit_type)
         type_row.addStretch()
@@ -372,7 +911,7 @@ class InterfaceEditorDialog(QDialog):
             "headers": headers,
             "body": body_raw if body_raw else None,
             "is_active": self.active_check.isChecked(),
-            "type": "cobranca" if self.edit_type.currentText() == "Cobranca" else "normal",
+            "type": "ia" if self.edit_type.currentText() == "IA" else ("n8n" if self.edit_type.currentText() == "n8n" else ("cobranca" if self.edit_type.currentText() == "Cobranca" else "normal")),
         }
 
 
@@ -596,11 +1135,12 @@ class RequisicoesView(QWidget):
         type_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         type_row.addWidget(type_label)
         self.create_type = QComboBox()
-        self.create_type.addItems(["Normal", "Cobranca"])
+        self.create_type.addItems(["Normal", "Cobranca", "IA", "n8n"])
         self.create_type.setStyleSheet(f"QComboBox {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: {t.text}; min-height: 18px; min-width: 120px; }} QComboBox::drop-down {{ border: none; width: 28px; }} QComboBox::down-arrow {{ border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {t.text_secondary}; margin-right: 6px; }}")
         type_row.addWidget(self.create_type)
         type_row.addStretch()
         conf_layout.addLayout(type_row)
+        self.create_type.currentTextChanged.connect(self._on_create_type_changed)
         main_layout.addWidget(section_conf)
         section_req = QFrame()
         section_req.setStyleSheet(f"QFrame {{ background-color: {t.bg}; border: 1px solid {t.surface_elevated}; border-radius: 6px; }}")
@@ -700,7 +1240,7 @@ class RequisicoesView(QWidget):
                 k, v = line.split(":", 1)
                 headers[k.strip()] = v.strip()
         url = self.create_url.text().strip()
-        integ_type = "cobranca" if self.create_type.currentText() == "Cobranca" else "normal"
+        integ_type = "ia" if self.create_type.currentText() == "IA" else ("n8n" if self.create_type.currentText() == "n8n" else ("cobranca" if self.create_type.currentText() == "Cobranca" else "normal"))
         payload = {
             "name": name,
             "template_id": None,
@@ -743,6 +1283,12 @@ class RequisicoesView(QWidget):
         self.btn_save.setText("Criar Requisição")
         show_error(self, "Erro", error)
 
+    def _on_create_type_changed(self, text: str):
+        if text == "IA":
+            self.create_url.setText("http://192.168.1.94:11434/api/generate")
+        elif text == "n8n":
+            self.create_url.setText("http://seu-n8n.com/webhook/")
+
     def _load_sql_variables(self):
         try:
             from frontend.app.api.sql_variable_api import list_sql_variables
@@ -782,10 +1328,19 @@ class RequisicoesView(QWidget):
             active_item.setForeground(QColor(t.success) if active else QColor(t.danger))
             self.table.setItem(row, 1, active_item)
             integ_type = cfg.get("type", "normal")
-            type_label = "Cobranca" if integ_type == "cobranca" else "Normal"
+            if integ_type == "ia":
+                type_label = "IA"
+            elif integ_type == "n8n":
+                type_label = "n8n"
+            elif integ_type == "cobranca":
+                type_label = "Cobranca"
+            else:
+                type_label = "Normal"
             type_item = QTableWidgetItem(type_label)
             if integ_type == "cobranca":
                 type_item.setForeground(QColor(t.warning))
+            elif integ_type == "ia" or integ_type == "n8n":
+                type_item.setForeground(QColor(t.accent_blue))
             self.table.setItem(row, 2, type_item)
             preset = cfg.get("schedule_preset")
             if cfg.get("schedule_enabled") and preset:
@@ -892,7 +1447,11 @@ class RequisicoesView(QWidget):
         payload = cfg.get("manual_payload", "") or ""
         headers = cfg.get("manual_headers", {}) or {}
         url = cfg.get("api_url", "")
-        all_data = {"body": payload, "headers": headers, "url": url}
+        integ_type = cfg.get("type", "normal")
+        if integ_type == "ia":
+            all_data = {"body": payload, "url": url}
+        else:
+            all_data = {"body": payload, "headers": headers, "url": url}
         variables = _extract_variables(all_data)
         if variables:
             dlg = TriggerVariablesDialog(variables, self, sql_variables=self._sql_variables, user=self.user)
@@ -913,17 +1472,71 @@ class RequisicoesView(QWidget):
             except json.JSONDecodeError:
                 show_error(self, "JSON Invalido", "O JSON do corpo esta invalido.")
                 return
-            overrides = {}
-        run_in_thread(
-            integration_api.trigger_integration,
-            lambda r: (
-                show_success(self, "Executado", f'{r.get("sent", 0)} de {r.get("total", 0)} requisicoes enviadas.'),
-                self.refresh(),
-            ),
-            lambda e: show_error(self, "Erro", str(e)),
-            cfg["id"],
-            overrides,
-        )
+            overrides = {"override_payload": payload, "override_headers": headers}
+        if integ_type == "ia":
+            try:
+                parsed = json.loads(overrides.get("override_payload", payload))
+                use_stream = parsed.get("stream", False)
+            except (json.JSONDecodeError, TypeError):
+                use_stream = False
+        else:
+            use_stream = False
+
+        if use_stream:
+            self._trigger_stream(cfg["id"], overrides)
+        elif integ_type == "n8n":
+            dlg = N8nLoadingDialog(cfg["id"], overrides, self)
+            if dlg.exec() == QDialog.Accepted:
+                r = dlg.get_result()
+                if r:
+                    self._show_n8n_response(r)
+            self.refresh()
+        else:
+            if integ_type == "ia":
+                callback = lambda r: (
+                    self._show_ai_response(r),
+                    self.refresh(),
+                )
+            else:
+                callback = lambda r: (
+                    show_success(self, "Executado", f'{r.get("sent", 0)} de {r.get("total", 0)} requisicoes enviadas.'),
+                    self.refresh(),
+                )
+            run_in_thread(
+                integration_api.trigger_integration,
+                callback,
+                lambda e: show_error(self, "Erro", str(e)),
+                cfg["id"],
+                overrides,
+            )
+
+    def _trigger_stream(self, config_id, overrides):
+        dlg = StreamDialog(config_id, overrides, self)
+        if dlg.exec() == QDialog.Accepted:
+            result = dlg.get_result()
+            if result:
+                full_text, model, duration = result
+                dlg2 = AIResponseDialog(full_text, model=model, duration_secs=duration, parent=self)
+                dlg2.exec()
+        self.refresh()
+
+    def _show_ai_response(self, r: dict):
+        ai_text = r.get("ai_response", "")
+        if not ai_text:
+            show_success(self, "Executado", "Resposta recebida, mas nenhum texto de IA encontrado.")
+            return
+        model = r.get("model", "")
+        duration = r.get("total_duration", 0)
+        dlg = AIResponseDialog(ai_text, model=model, duration_secs=duration / 1_000_000_000.0, parent=self)
+        dlg.exec()
+
+    def _show_n8n_response(self, r: dict):
+        resp = r.get("response")
+        if not resp or not isinstance(resp, dict):
+            show_success(self, "Executado", "Resposta recebida, mas sem dados estruturados.")
+            return
+        dlg = N8nResponseDialog(resp, parent=self)
+        dlg.exec()
 
     def _delete(self, cfg: dict):
         name = cfg.get("template_name", "") or "Manual"

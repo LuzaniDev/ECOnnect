@@ -1,4 +1,8 @@
+import json
+import httpx
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,7 +17,7 @@ from ..schemas.integration import (
     IntegrationConfigResponse,
     TriggerRequest,
 )
-from ..services.integration_service import IntegrationService
+from ..services.integration_service import IntegrationService, compute_next_run
 from ..services.audit_service import log_action
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -186,3 +190,84 @@ async def trigger_integration(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{config_id}/trigger-stream")
+async def trigger_integration_stream(
+    config_id: UUID,
+    trigger_data: TriggerRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = IntegrationService(db)
+    config = await service.get_by_id(config_id, eco_empresa=current_user.eco_empresa)
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuracao nao encontrada")
+    if config.type != "ia":
+        raise HTTPException(status_code=400, detail="Streaming suportado apenas para integracoes do tipo IA")
+    if not config.is_active:
+        raise HTTPException(status_code=400, detail="Integracao esta desativada")
+
+    payload = trigger_data.override_payload or config.manual_payload or ""
+
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="JSON invalido no corpo da requisicao",
+        )
+
+    async def event_stream():
+        full_text = ""
+        model_name = ""
+        total_duration = 0
+
+        try:
+            async with httpx.AsyncClient(timeout=600) as client:
+                async with client.stream(
+                    "POST", config.api_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    resp.raise_for_status()
+                    buffer = ""
+                    async for chunk in resp.aiter_bytes():
+                        buffer += chunk.decode("utf-8")
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                ol = json.loads(line)
+                                token = ol.get("response", "")
+                                done = ol.get("done", False)
+                                full_text += token
+                                yield f"data: {json.dumps({'token': token, 'done': False})}\n\n"
+                                if done:
+                                    model_name = ol.get("model", "")
+                                    total_duration = ol.get("total_duration", 0)
+                            except json.JSONDecodeError:
+                                continue
+        except httpx.HTTPError as e:
+            yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+            await db.rollback()
+            return
+
+        c = await db.get(IntegrationConfig, config_id)
+        if c:
+            c.last_run_at = datetime.utcnow()
+            if c.schedule_enabled and c.schedule_preset:
+                c.next_run_at = compute_next_run(
+                    c.schedule_preset, c.schedule_days, c.schedule_time or "09:00"
+                )
+            else:
+                c.next_run_at = None
+            await db.commit()
+
+        yield (
+            f"data: {json.dumps({'done': True, 'full_response': full_text, 'model': model_name, 'total_duration': total_duration})}\n\n"
+        )
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

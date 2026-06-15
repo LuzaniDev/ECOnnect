@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QWidget,
 )
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
+from frontend.app.core.theme import theme_manager
 
 
 def _parse_column_names(sql: str) -> list[str]:
@@ -53,15 +54,7 @@ class VariablePickerDialog(QDialog):
         self.setMinimumWidth(520)
         self.setMinimumHeight(420)
         self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QListWidget {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px;
-                font-size: 12px;
-            }
             QListWidget::item { padding: 8px 12px; }
-            QListWidget::item:selected { background: #1f6feb; color: #fff; }
         """)
         self._build()
 
@@ -77,7 +70,7 @@ class VariablePickerDialog(QDialog):
             "no editor do JSON para ver os valores disponiveis."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #8b949e; font-size: 12px;")
+        desc.setStyleSheet("font-size: 12px;")
         layout.addWidget(desc)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Buscar variavel...")
@@ -113,14 +106,7 @@ class SqlVariableManagerDialog(QDialog):
         self.setWindowTitle("Gerenciar Variaveis SQL")
         self.setMinimumSize(600, 450)
         self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; }
             QTableWidget::item { padding: 6px; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 8px; font-weight: 600; }
-            QPushButton { border-radius: 4px; padding: 6px 14px; font-size: 12px; font-weight: 600; }
         """)
         self._build()
 
@@ -136,15 +122,14 @@ class SqlVariableManagerDialog(QDialog):
             "que sera executada no Firebird no momento do disparo."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #8b949e; font-size: 12px;")
+        desc.setStyleSheet("font-size: 12px;")
         layout.addWidget(desc)
         toolbar = QHBoxLayout()
         btn_add = QPushButton("+ Nova Variavel")
-        btn_add.setStyleSheet("background: #1f6feb; color: #fff; border: none; padding: 8px 16px;")
+        btn_add.setProperty("primary", True)
         btn_add.clicked.connect(self._add)
         toolbar.addWidget(btn_add)
         btn_refresh = QPushButton("Atualizar")
-        btn_refresh.setStyleSheet("background: #21262d; color: #c9d1d9; border: 1px solid #30363d;")
         btn_refresh.clicked.connect(self._load)
         toolbar.addWidget(btn_refresh)
         toolbar.addStretch()
@@ -184,11 +169,10 @@ class SqlVariableManagerDialog(QDialog):
             al.setContentsMargins(4, 2, 4, 2)
             al.setSpacing(4)
             btn_edit = QPushButton("Editar")
-            btn_edit.setStyleSheet("background: #21262d; border: 1px solid #30363d; color: #c9d1d9;")
             btn_edit.clicked.connect(lambda checked, vid=v["id"], vd=v: self._edit(vid, vd))
             al.addWidget(btn_edit)
             btn_del = QPushButton("Excluir")
-            btn_del.setStyleSheet("background: transparent; border: 1px solid #f85149; color: #f85149;")
+            btn_del.setProperty("danger", True)
             btn_del.clicked.connect(lambda checked, vid=v["id"], vn=v["name"]: self._delete(vid, vn))
             al.addWidget(btn_del)
             al.addStretch()
@@ -228,28 +212,7 @@ class SqlVariableEditDialog(QDialog):
         self.setWindowTitle("Editar Variavel" if is_edit else "Nova Variavel")
         self.setMinimumWidth(640)
         self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QLineEdit, QTextEdit {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 8px;
-            }
-            QComboBox {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 6px;
-            }
-            QComboBox::drop-down { border: none; width: 24px; }
-            QComboBox::down-arrow {
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid #8b949e; margin-right: 4px;
-            }
-            QPushButton#btnTestSql {
-                background: #21262d; border: 1px solid #30363d;
-                border-radius: 4px; color: #58a6ff; padding: 8px 16px;
-                font-size: 12px; font-weight: 600; min-width: 100px;
-            }
-            QPushButton#btnTestSql:hover { background: #30363d; }
+            QPushButton#btnTestSql { font-size: 12px; font-weight: 600; min-width: 100px; }
         """)
         self._build()
 
@@ -287,7 +250,7 @@ class SqlVariableEditDialog(QDialog):
         form.addRow("SQL Query:", sql_row)
         self.status_label = QLabel("Clique em \"Testar SQL\" para validar a consulta.")
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("color: #8b949e; font-size: 12px; padding: 2px 0;")
+        self.status_label.setStyleSheet("font-size: 12px; padding: 2px 0;")
         form.addRow("", self.status_label)
         val_row = QHBoxLayout()
         self.column_combo = QComboBox()
@@ -296,7 +259,7 @@ class SqlVariableEditDialog(QDialog):
         val_row.addWidget(self.column_combo, 1)
         hint = QLabel("Colunas anteriores sao exibidas como identificacao no dropdown.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #d29922; font-size: 11px;")
+        hint.setStyleSheet(f"font-size: 11px; color: {theme_manager.current().warning};")
         val_row.addWidget(hint)
         form.addRow("Coluna de valor:", val_row)
         layout.addLayout(form)
@@ -313,18 +276,19 @@ class SqlVariableEditDialog(QDialog):
         self._tested_ok = False
         self.column_combo.setEnabled(False)
         self.column_combo.clear()
+        t = theme_manager.current()
         self.status_label.setText("Testando...")
-        self.status_label.setStyleSheet("color: #d29922; font-size: 12px; padding: 2px 0;")
+        self.status_label.setStyleSheet(f"color: {t.warning}; font-size: 12px; padding: 2px 0;")
         try:
             from frontend.app.core.firebird_client import fb
             col_names, rows = fb.query_with_columns(sql)
         except Exception as e:
             self.status_label.setText(f"Erro: {str(e)[:80]}")
-            self.status_label.setStyleSheet("color: #f85149; font-size: 12px; padding: 2px 0;")
+            self.status_label.setStyleSheet(f"color: {t.danger}; font-size: 12px; padding: 2px 0;")
             return
         if not rows or len(rows) <= 1:
             self.status_label.setText("Deve retornar mais de 1 registro")
-            self.status_label.setStyleSheet("color: #f85149; font-size: 12px; padding: 2px 0;")
+            self.status_label.setStyleSheet(f"color: {t.danger}; font-size: 12px; padding: 2px 0;")
             return
         self._tested_ok = True
         self._tested_columns = col_names or _parse_column_names(sql)
@@ -342,7 +306,7 @@ class SqlVariableEditDialog(QDialog):
         if col_names:
             status_parts.append(f"Colunas: {', '.join(col_names)}")
         self.status_label.setText("  ".join(status_parts))
-        self.status_label.setStyleSheet("color: #3fb950; font-size: 12px; padding: 2px 0;")
+        self.status_label.setStyleSheet(f"color: {t.success}; font-size: 12px; padding: 2px 0;")
 
     def _save(self):
         if not self._tested_ok:

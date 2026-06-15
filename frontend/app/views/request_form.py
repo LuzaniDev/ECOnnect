@@ -14,8 +14,9 @@ from PySide6.QtWidgets import (
 )
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
-from frontend.app.api import template_api, request_api
+from frontend.app.api import template_api, request_api, meta_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 TAG_OPTIONS = ["", "aviso", "cobrança", "promoção", "outro"]
 
@@ -27,38 +28,17 @@ TAG_LABELS = {
     "outro": "Outro",
 }
 
-FORM_FRAME_STYLE = """
-QFrame#formSection {
-    background-color: #141d32;
-    border: 1px solid #1e2d4a;
-    border-radius: 10px;
-    padding: 20px;
-}
-QLabel#sectionLabel {
-    font-size: 11px;
-    color: #64748b;
-    text-transform: uppercase;
-    padding-bottom: 4px;
-    font-weight: 600;
-}
-QLabel#sectionLabel2 {
-    font-size: 11px;
-    color: #64748b;
-    text-transform: uppercase;
-    padding-bottom: 4px;
-    font-weight: 600;
-    padding-top: 12px;
-}
-"""
+FORM_FRAME_STYLE = ""
 
 
 class RequestFormView(QWidget):
     saved = Signal()
 
-    def __init__(self, token: str, user: dict):
+    def __init__(self, token: str, user: dict, use_meta_api: bool = False):
         super().__init__()
         self.token = token
         self.user = user
+        self.use_meta_api = use_meta_api
         self.templates: list[dict] = []
         self.selected_template: dict | None = None
         self.param_widgets: list[QLineEdit] = []
@@ -79,7 +59,7 @@ class RequestFormView(QWidget):
 
         is_admin = self.user.get("role") == "admin"
         title = QLabel("Enviar Mensagem" if not is_admin else "Nova Requisição")
-        title.setStyleSheet("font-size: 24px; font-weight: 700; color: #f1f5f9; ")
+        title.setStyleSheet("font-size: 24px; font-weight: 700;")
         layout.addWidget(title)
 
         # Template section
@@ -155,20 +135,18 @@ class RequestFormView(QWidget):
         self.params_layout.addWidget(params_label)
 
         self.params_frame = QFrame()
-        self.params_frame.setStyleSheet(
-            "QFrame { background: transparent; border: none; }"
-        )
         self.params_inner = QVBoxLayout(self.params_frame)
         self.params_inner.setSpacing(8)
         self.params_frame.setVisible(False)
         self.params_layout.addWidget(self.params_frame)
 
+        t = theme_manager.current()
         self.cooldown_warning = QLabel()
         self.cooldown_warning.setStyleSheet(
-            "color: #f8891d; font-size: 12px; padding: 8px 12px; "
-            "background-color: rgba(248, 137, 29, 0.1); "
-            "border: 1px solid rgba(248, 137, 29, 0.3); "
-            "border-radius: 6px;"
+            f"color: {t.warning}; font-size: 12px; padding: 8px 12px; "
+            f"background-color: rgba({_hex_to_rgb(t.warning)}, 0.1); "
+            f"border: 1px solid rgba({_hex_to_rgb(t.warning)}, 0.3); "
+            f"border-radius: 6px;"
         )
         self.cooldown_warning.setVisible(False)
         self.params_layout.addWidget(self.cooldown_warning)
@@ -181,9 +159,7 @@ class RequestFormView(QWidget):
 
         self.btn_send = QPushButton("Enviar Requisição")
         self.btn_send.setProperty("success", True)
-        self.btn_send.setStyleSheet(
-            "font-weight: 700; font-size: 14px; padding: 12px 32px;"
-        )
+        self.btn_send.setStyleSheet("font-size: 14px; padding: 12px 32px;")
         self.btn_send.clicked.connect(self._send)
         btn_layout.addWidget(self.btn_send)
 
@@ -206,28 +182,6 @@ class RequestFormView(QWidget):
         # Right panel - Preview
         right = QFrame()
         right.setObjectName("previewPanel")
-        right.setStyleSheet(
-            """
-            QFrame#previewPanel {
-                background-color: #0a1220;
-                border-left: 1px solid #1e2d4a;
-            }
-            QLabel#previewHeader {
-                font-size: 14px;
-                font-weight: 700;
-                color: #f1f5f9;
-                padding: 20px 24px 4px 24px;
-                
-            }
-            QLabel#previewSub {
-                font-size: 11px;
-                color: #64748b;
-                padding: 0 24px 16px 24px;
-                text-transform: uppercase;
-                
-            }
-        """
-        )
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
@@ -242,15 +196,7 @@ class RequestFormView(QWidget):
 
         preview_content_frame = QFrame()
         preview_content_frame.setStyleSheet(
-            """
-            QFrame {
-                background-color: #0d1525;
-                border: 1px solid #1e2d4a;
-                border-radius: 10px;
-                margin: 8px 16px;
-                padding: 20px;
-            }
-            """
+            "border-radius: 10px; margin: 8px 16px; padding: 20px;"
         )
         preview_inner = QVBoxLayout(preview_content_frame)
 
@@ -258,9 +204,7 @@ class RequestFormView(QWidget):
             "Selecione um template e preencha\nos parâmetros para visualizar\na mensagem completa."
         )
         self.preview_content.setWordWrap(True)
-        self.preview_content.setStyleSheet(
-            "font-size: 13px; color: #64748b; background: transparent;"
-        )
+        self.preview_content.setStyleSheet("font-size: 13px;")
         preview_inner.addWidget(self.preview_content)
 
         right_layout.addWidget(preview_content_frame)
@@ -305,9 +249,7 @@ class RequestFormView(QWidget):
             self.preview_content.setText(
                 "Selecione um template e preencha\nos parâmetros para visualizar\na mensagem completa."
             )
-            self.preview_content.setStyleSheet(
-                "font-size: 13px; color: #64748b; background: transparent;"
-            )
+            self.preview_content.setStyleSheet("font-size: 13px;")
             return
 
         template_id = self.template_combo.currentData()
@@ -324,7 +266,7 @@ class RequestFormView(QWidget):
         for i in range(param_count):
             order = i + 1
             label = QLabel(f"Parâmetro {order}")
-            label.setStyleSheet("color: #94a3b8; font-size: 12px; padding-top: 6px;")
+            label.setStyleSheet("font-size: 12px; padding-top: 6px;")
             self.params_inner.addWidget(label)
 
             edit = QLineEdit()
@@ -349,9 +291,7 @@ class RequestFormView(QWidget):
             preview = preview.replace(placeholder, display, 1)
 
         self.preview_content.setText(preview)
-        self.preview_content.setStyleSheet(
-            "font-size: 13px; color: #f1f5f9; background: transparent; "
-        )
+        self.preview_content.setStyleSheet("font-size: 13px;")
 
     def _send(self):
         if not self.selected_template:
@@ -387,19 +327,28 @@ class RequestFormView(QWidget):
             "parameter_values": param_values,
         }
 
-        logger.info("REQ_FORM", "Enviando requisição", line=388, template_id=payload["template_id"], telefone=phone)
+        logger.info("REQ_FORM", "Enviando requisição", template_id=payload["template_id"], telefone=phone)
         self.btn_send.setEnabled(False)
-        run_in_thread(
-            request_api.create_request,
-            self._on_sent,
-            self._on_send_error,
-            payload,
-        )
+        if self.use_meta_api:
+            run_in_thread(
+                meta_api.send_message,
+                self._on_sent,
+                self._on_send_error,
+                payload,
+            )
+        else:
+            run_in_thread(
+                request_api.create_request,
+                self._on_sent,
+                self._on_send_error,
+                payload,
+            )
 
     def _on_sent(self, result: dict):
         self.btn_send.setEnabled(True)
-        logger.info("REQ_FORM", "Requisição criada com sucesso", request_id=str(result.get("id", ""))[:8])
-        show_success(self, "Enviado!", "Requisição criada com sucesso!")
+        msg_id = result.get("message_id") or result.get("id", "")
+        logger.info("REQ_FORM", "Requisição criada com sucesso", request_id=str(msg_id)[:12])
+        show_success(self, "Enviado!", "Mensagem enviada com sucesso!")
         self.saved.emit()
 
     def _on_send_error(self, error: str):

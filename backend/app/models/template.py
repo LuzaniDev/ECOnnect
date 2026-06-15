@@ -21,5 +21,8 @@ class Template(Base):
 
     eco_empresa = Column(String(20), nullable=True, index=True)
 
+    meta_template_id = Column(String(100), nullable=True)
+    meta_status = Column(String(20), nullable=True)
+
     creator = relationship("User", back_populates="templates")
     requests = relationship("Request", back_populates="template")

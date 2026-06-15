@@ -10,106 +10,14 @@ from PySide6.QtWidgets import (
 )
 
 
-SIDEBAR_STYLE = """
-QWidget#sidebar {
-    background-color: #0d1117;
-    border-right: 1px solid #21262d;
-    min-width: 200px;
-    max-width: 200px;
-}
 
-QWidget#sidebar QLabel#brand_name {
-    font-size: 16px;
-    font-weight: 800;
-    color: #c9d1d9;
-}
-
-QWidget#sidebar QLabel#brand_sub {
-    font-size: 9px;
-    color: #8b949e;
-    text-transform: uppercase;
-    padding-top: 1px;
-}
-
-QWidget#sidebar QLabel#user_info {
-    font-size: 11px;
-    color: #8b949e;
-    padding: 10px 14px 2px 14px;
-    margin: 0 8px;
-}
-
-QWidget#sidebar QLabel#user_role {
-    font-size: 9px;
-    color: #d29922;
-    padding: 0 14px 10px 14px;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin: 0 8px;
-    border-bottom: 1px solid #21262d;
-}
-
-QWidget#sidebar QPushButton {
-    background-color: transparent;
-    color: #8b949e;
-    border: none;
-    border-radius: 6px;
-    text-align: left;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 500;
-    margin: 1px 6px;
-    min-height: 16px;
-    outline: none;
-}
-
-QWidget#sidebar QPushButton:hover {
-    background-color: #161b22;
-    color: #c9d1d9;
-}
-
-QWidget#sidebar QPushButton:checked {
-    background-color: rgba(31, 111, 235, 0.15);
-    color: #58a6ff;
-    font-weight: 600;
-    border-left: 2px solid #1f6feb;
-}
-
-QWidget#sidebar QPushButton#nav_mundo_bots_btn {
-    margin: 0 6px 4px 6px;
-}
-
-QWidget#sidebar QPushButton#nav_settings_btn,
-QWidget#sidebar QPushButton#nav_logs_btn {
-    border-radius: 0;
-    margin: 0 6px;
-    padding: 10px 12px;
-}
-
-QWidget#sidebar QPushButton#nav_settings_btn:hover,
-QWidget#sidebar QPushButton#nav_logs_btn:hover {
-    color: #c9d1d9;
-    background-color: rgba(255, 255, 255, 0.03);
-}
-
-QWidget#sidebar QPushButton#logout_btn {
-    color: #8b949e;
-    border-top: 1px solid #21262d;
-    border-radius: 0;
-    margin: 0 6px;
-    padding: 10px 12px;
-}
-
-QWidget#sidebar QPushButton#logout_btn:hover {
-    color: #f85149;
-    background-color: rgba(248, 81, 73, 0.08);
-}
-"""
+SIDEBAR_STYLE = ""
 
 ALL_TABS = {
     "dashboard": {"label": "Dashboard", "group": "Navegação"},
     "requisicoes": {"label": "Requisições", "group": "Requisições"},
-    "templates": {"label": "Modelos", "group": "Requisições"},
     "mundo_bots": {"label": "Mundo dos Bots", "group": "Mundo dos Bots"},
+    "meta": {"label": "Meta", "group": "Meta"},
     "configuracoes": {"label": "Configurações", "group": "Administração"},
     "admin_tabs": {"label": "Gerenciar Abas", "group": "Administração"},
     "logs": {"label": "Logs do Sistema", "group": "Administração"},
@@ -119,17 +27,17 @@ ALL_TABS = {
 class Sidebar(QFrame):
     nav_dashboard = Signal()
     nav_requisicoes = Signal()
-    nav_templates = Signal()
+    nav_meta = Signal()
     nav_mundo_bots = Signal()
     nav_settings = Signal()
     nav_logout = Signal()
     nav_logs = Signal()
     nav_admin_tabs = Signal()
 
+
     def __init__(self, username: str, role: str, permitted_tabs: list[str] | None = None):
         super().__init__()
         self.setObjectName("sidebar")
-        self.setStyleSheet(SIDEBAR_STYLE)
         self._build_ui(username, role, permitted_tabs)
 
     def _build_ui(self, username: str, role: str, permitted_tabs: list[str] | None = None):
@@ -152,7 +60,7 @@ class Sidebar(QFrame):
             logo_label.setFixedSize(28, 28)
         else:
             logo_label.setText("EC")
-            logo_label.setStyleSheet("font-size: 16px; font-weight: 800; color: #d29922;")
+            logo_label.setStyleSheet("font-size: 16px; font-weight: 800;")
         header.addWidget(logo_label)
 
         brand_wrapper = QVBoxLayout()
@@ -177,12 +85,14 @@ class Sidebar(QFrame):
         role_label.setObjectName("user_role")
         layout.addWidget(role_label)
 
+        layout.addSpacing(16)
+
         is_admin = role == "admin"
 
         nav_items = [
             ("dashboard", self.nav_dashboard),
             ("requisicoes", self.nav_requisicoes),
-            ("templates", self.nav_templates),
+            ("meta", self.nav_meta),
             ("mundo_bots", self.nav_mundo_bots),
         ]
         if is_admin:
@@ -202,21 +112,15 @@ class Sidebar(QFrame):
 
             if group != current_group:
                 if current_group is not None:
-                    layout.addSpacing(4)
+                    sep = QFrame()
+                    sep.setObjectName("cat_separator")
+                    sep.setFrameShape(QFrame.HLine)
+                    layout.addWidget(sep)
+                    layout.addSpacing(10)
                 current_group = group
                 if group:
                     group_label = QLabel(group)
                     group_label.setObjectName("nav_group")
-                    group_label.setStyleSheet("""
-                        QLabel {
-                            font-size: 9px;
-                            color: #8b949e;
-                            padding: 12px 14px 4px 14px;
-                            text-transform: uppercase;
-                            font-weight: 600;
-                            letter-spacing: 0.5px;
-                        }
-                    """)
                     layout.addWidget(group_label)
 
             btn = self._make_button(

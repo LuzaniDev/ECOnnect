@@ -19,28 +19,10 @@ from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
 from frontend.app.api import template_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
-SECTION_STYLE = """
-QFrame#formSection {
-    background-color: #141d32;
-    border: 1px solid #1e2d4a;
-    border-radius: 12px;
-    padding: 24px;
-}
-QLabel#sectionLabel {
-    font-size: 11px;
-    color: #64748b;
-    text-transform: uppercase;
-    padding-bottom: 6px;
-    font-weight: 600;
-}
-QLabel#sectionHint {
-    font-size: 11px;
-    color: #475569;
-    padding-bottom: 8px;
-}
-"""
+SECTION_STYLE = ""
 
 
 TEMPLATE_CATEGORIES = [
@@ -85,7 +67,7 @@ class TemplateFormView(QWidget):
         layout.setSpacing(20)
 
         self.title = QLabel("Novo Template")
-        self.title.setStyleSheet("font-size: 28px; font-weight: 700; color: #f1f5f9; ")
+        self.title.setStyleSheet("font-size: 28px; font-weight: 700;")
         layout.addWidget(self.title)
 
         basic_section = QFrame()
@@ -193,7 +175,6 @@ class TemplateFormView(QWidget):
 
         param_row = QHBoxLayout()
         param_count_title = QLabel("Quantidade de parâmetros:")
-        param_count_title.setStyleSheet("color: #94a3b8; font-size: 13px;")
         param_row.addWidget(param_count_title)
 
         self.param_count_spin = QSpinBox()
@@ -202,7 +183,7 @@ class TemplateFormView(QWidget):
         self.param_count_spin.setMinimumHeight(44)
         self.param_count_spin.setMinimumWidth(140)
         self.param_count_spin.setStyleSheet(
-            "QSpinBox { font-size: 22px; padding: 8px 16px; font-weight: 700; }"
+            "font-size: 22px; padding: 8px 16px; font-weight: 700;"
         )
         self.param_count_spin.valueChanged.connect(self._on_param_count_change)
         param_row.addWidget(self.param_count_spin)
@@ -233,7 +214,7 @@ class TemplateFormView(QWidget):
 
         self.btn_save = QPushButton("Salvar Template")
         self.btn_save.setProperty("success", True)
-        self.btn_save.setStyleSheet("font-weight: 700; font-size: 15px; padding: 14px 36px;")
+        self.btn_save.setStyleSheet("font-size: 15px; padding: 14px 36px;")
         self.btn_save.clicked.connect(self._save)
         btn_layout.addWidget(self.btn_save)
 
@@ -256,21 +237,13 @@ class TemplateFormView(QWidget):
         right.setObjectName("previewPanel")
         right.setStyleSheet(
             """
-            QFrame#previewPanel {
-                background-color: #0a1220;
-                border-left: 1px solid #1e2d4a;
-            }
             QLabel#previewHeader {
                 font-size: 16px;
-                font-weight: 700;
-                color: #f1f5f9;
                 padding: 28px 28px 8px 28px;
             }
             QLabel#previewSub {
                 font-size: 11px;
-                color: #64748b;
                 padding: 0 28px 20px 28px;
-                text-transform: uppercase;
             }
         """
         )
@@ -289,44 +262,26 @@ class TemplateFormView(QWidget):
         preview_scroll = QScrollArea()
         preview_scroll.setWidgetResizable(True)
         preview_scroll.setFrameShape(QFrame.NoFrame)
-        preview_scroll.setStyleSheet("border: none;")
 
+
+        t = theme_manager.current()
         preview_content = QFrame()
         preview_content.setStyleSheet(
-            """
-            QFrame {
-                background-color: #0d1525;
-                border: 1px solid #1e2d4a;
+            f"""
+            QFrame {{
+                background-color: {t.surface_elevated};
+                border: 1px solid {t.border};
                 border-radius: 14px;
                 margin: 12px 20px;
                 padding: 24px;
-            }
-            QLabel#msgText {
-                font-size: 14px;
-                color: #f1f5f9;
-                background: transparent;
-                line-height: 1.5;
-            }
-            QLabel#msgHeader {
-                font-size: 15px;
-                font-weight: 600;
-                color: #f1f5f9;
-                background: transparent;
-                padding-bottom: 10px;
-            }
-            QLabel#msgFooter {
-                font-size: 12px;
-                color: #64748b;
-                background: transparent;
-                padding-top: 12px;
-            }
-            QLabel#categoryBadge {
+            }}
+            QLabel#categoryBadge {{
                 font-size: 10px;
-                color: #f8891d;
-                background: rgba(248, 137, 29, 0.15);
+                color: {t.warning};
+                background: rgba({_hex_to_rgb(t.warning)}, 0.15);
                 border-radius: 4px;
                 padding: 4px 8px;
-            }
+            }}
         """
         )
         preview_inner = QVBoxLayout(preview_content)

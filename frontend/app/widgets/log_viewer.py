@@ -1,6 +1,6 @@
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QTextCursor, QFont
+from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtGui import QTextCursor, QFont, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
     QDialog,
@@ -15,59 +15,13 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.api import audit_api
 
 
-LOG_VIEWER_STYLE = """
-QDialog#logViewer {
-    background-color: #070b14;
-}
-QFrame#logToolbar {
-    background-color: #0a1220;
-    border-bottom: 1px solid #1e2d4a;
-    padding: 8px 16px;
-}
-QLabel#logTitle {
-    font-size: 14px;
-    font-weight: 700;
-    color: #f1f5f9;
-}
-QLabel#logCount {
-    font-size: 11px;
-    color: #64748b;
-}
-QPushButton#logBtn {
-    background-color: #141d32;
-    color: #94a3b8;
-    border: 1px solid #1e2d4a;
-    border-radius: 6px;
-    padding: 6px 16px;
-    font-size: 12px;
-    font-weight: 600;
-}
-QPushButton#logBtn:hover {
-    background-color: #1e2d4a;
-    color: #f1f5f9;
-}
-QPushButton#logBtnDanger {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px;
-    padding: 6px 16px;
-    font-size: 12px;
-    font-weight: 600;
-}
-QPushButton#logBtnDanger:hover {
-    background-color: rgba(239, 68, 68, 0.3);
-}
+QCOMBO_LOGFILTER_STYLE = """
 QComboBox#logFilter {
-    background-color: #141d32;
-    color: #94a3b8;
-    border: 1px solid #1e2d4a;
-    border-radius: 6px;
-    padding: 5px 12px;
     font-size: 12px;
     min-width: 100px;
 }
@@ -81,8 +35,8 @@ class LogViewerWindow(QDialog):
         self.setWindowTitle("ECOnnect — Logs")
         self.setMinimumSize(900, 500)
         self.resize(1100, 600)
-        self.setStyleSheet(LOG_VIEWER_STYLE)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setStyleSheet(QCOMBO_LOGFILTER_STYLE)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose, False)
 
         self._paused = False
@@ -91,6 +45,7 @@ class LogViewerWindow(QDialog):
         self._timer = None
         self._audit_logs = []
         self._audit_last_fetch = 0
+        self._drag_pos = None
 
         self._setup_ui()
         self._load_history()
@@ -102,20 +57,24 @@ class LogViewerWindow(QDialog):
         layout.setSpacing(0)
 
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { background: #070b14; border: none; }
-            QTabBar::tab {
-                background: transparent; color: #8b949e; border: none;
-                padding: 8px 20px; font-size: 12px; font-weight: 500;
-                border-bottom: 2px solid transparent;
-            }
-            QTabBar::tab:selected { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
-            QTabBar::tab:hover { color: #c9d1d9; }
-        """)
 
         self._build_system_tab()
         self._build_audit_tab()
-        layout.addWidget(self.tabs)
+        layout.addWidget(self.tabs, 1)
+
+        btn_bar = QFrame()
+        btn_bar_layout = QHBoxLayout(btn_bar)
+        btn_bar_layout.setContentsMargins(12, 6, 12, 10)
+        self._btn_move = QPushButton("Mover")
+        self._btn_move.setProperty("ghost", True)
+        self._btn_move.installEventFilter(self)
+        btn_bar_layout.addWidget(self._btn_move)
+        btn_bar_layout.addStretch()
+        btn_close = QPushButton("Fechar")
+        btn_close.setProperty("ghost", True)
+        btn_close.clicked.connect(self.close)
+        btn_bar_layout.addWidget(btn_close)
+        layout.addWidget(btn_bar)
 
     def _build_system_tab(self):
         tab = QWidget()
@@ -139,7 +98,7 @@ class LogViewerWindow(QDialog):
         toolbar_layout.addStretch()
 
         filter_label = QLabel("Filtrar:")
-        filter_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        filter_label.setStyleSheet("font-size: 12px;")
         toolbar_layout.addWidget(filter_label)
 
         self.filter_combo = QComboBox()
@@ -155,9 +114,7 @@ class LogViewerWindow(QDialog):
 
         self.auto_scroll_check = QCheckBox("Auto-scroll")
         self.auto_scroll_check.setChecked(True)
-        self.auto_scroll_check.setStyleSheet(
-            "color: #94a3b8; font-size: 12px; spacing: 6px;"
-        )
+        self.auto_scroll_check.setStyleSheet("font-size: 12px;")
         toolbar_layout.addWidget(self.auto_scroll_check)
 
         clear_btn = QPushButton("Limpar")
@@ -170,13 +127,11 @@ class LogViewerWindow(QDialog):
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         self.output.setFont(QFont("Consolas", 10))
+        self.output.setObjectName("logOutput")
         self.output.setStyleSheet(
             "QTextEdit {"
-            "  background-color: #070b14;"
-            "  color: #f1f5f9;"
             "  border: none;"
             "  padding: 12px 16px;"
-            "  selection-background-color: #014998;"
             "}"
         )
         self.output.setLineWrapMode(QTextEdit.NoWrap)
@@ -216,13 +171,11 @@ class LogViewerWindow(QDialog):
         self.audit_output = QTextEdit()
         self.audit_output.setReadOnly(True)
         self.audit_output.setFont(QFont("Consolas", 10))
+        self.audit_output.setObjectName("logOutput")
         self.audit_output.setStyleSheet(
             "QTextEdit {"
-            "  background-color: #070b14;"
-            "  color: #f1f5f9;"
             "  border: none;"
             "  padding: 12px 16px;"
-            "  selection-background-color: #014998;"
             "}"
         )
         self.audit_output.setLineWrapMode(QTextEdit.NoWrap)
@@ -308,13 +261,14 @@ class LogViewerWindow(QDialog):
         )
 
     def _color_for_level(self, entry: str) -> str:
+        t = theme_manager.current()
         if "[ERROR]" in entry:
-            return "#ef4444"
+            return t.danger
         elif "[WARN" in entry:
-            return "#f8891d"
+            return t.warning
         elif "[INFO" in entry:
-            return "#22c55e"
-        return "#94a3b8"
+            return t.success
+        return t.text_secondary
 
     def _matches_filter(self, entry: str) -> bool:
         if self._filter_level == "Todos":
@@ -332,12 +286,13 @@ class LogViewerWindow(QDialog):
         self._last_count = len(logger.get_buffer())
 
     def _toggle_pause(self):
+        t = theme_manager.current()
         self._paused = not self._paused
         self.pause_btn.setText("Retomar" if self._paused else "Pausar")
         self.pause_btn.setStyleSheet(
-            "QPushButton#logBtn { color: #f8891d; border-color: #f8891d; }"
+            f"QPushButton#logBtn {{ color: {t.warning}; border-color: {t.warning}; }}"
             if self._paused
-            else "QPushButton#logBtn { color: #94a3b8; border-color: #1e2d4a; }"
+            else f"QPushButton#logBtn {{ color: {t.text_secondary}; border-color: {t.border}; }}"
         )
 
     def _clear_logs(self):
@@ -345,3 +300,17 @@ class LogViewerWindow(QDialog):
         self.count_label.setText("0 entradas")
         logger.clear_buffer()
         self._last_count = 0
+
+    def eventFilter(self, obj, event):
+        if obj is self._btn_move:
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self._drag_pos = event.globalPos()
+                return True
+            elif event.type() == QEvent.MouseMove and self._drag_pos is not None:
+                self.move(self.pos() + event.globalPos() - self._drag_pos)
+                self._drag_pos = event.globalPos()
+                return True
+            elif event.type() == QEvent.MouseButtonRelease:
+                self._drag_pos = None
+                return True
+        return super().eventFilter(obj, event)

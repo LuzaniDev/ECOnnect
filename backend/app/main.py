@@ -257,6 +257,82 @@ async def _run_migrations():
             await session.rollback()
 
 
+    # Migration for meta fields on templates
+    async with async_session() as session:
+        try:
+            result = await session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'templates'
+            """))
+            existing = {row[0] for row in result.fetchall()}
+            if 'meta_template_id' not in existing:
+                await session.execute(text(
+                    "ALTER TABLE templates ADD COLUMN meta_template_id VARCHAR(100)"
+                ))
+            if 'meta_status' not in existing:
+                await session.execute(text(
+                    "ALTER TABLE templates ADD COLUMN meta_status VARCHAR(20)"
+                ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+    # Migration for meta_credentials table
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name = 'meta_credentials'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE meta_credentials (
+                        id UUID PRIMARY KEY,
+                        eco_empresa VARCHAR(20) UNIQUE,
+                        waba_id VARCHAR(100) NOT NULL,
+                        phone_number_id VARCHAR(100) NOT NULL,
+                        access_token TEXT NOT NULL,
+                        is_verified BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX ix_meta_credentials_eco_empresa ON meta_credentials (eco_empresa)"
+                ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name = 'meta_messages'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE meta_messages (
+                        id UUID PRIMARY KEY,
+                        eco_empresa VARCHAR(20),
+                        from_phone VARCHAR(20) NOT NULL,
+                        to_phone VARCHAR(20) NOT NULL,
+                        direction VARCHAR(10) NOT NULL,
+                        template_name VARCHAR(100),
+                        body TEXT,
+                        meta_message_id VARCHAR(100),
+                        status VARCHAR(20) DEFAULT 'sent',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX ix_meta_messages_eco_empresa ON meta_messages (eco_empresa)"
+                ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+
 async def _ensure_permissions():
     from .config import settings as _settings
     _urls = [
@@ -417,6 +493,11 @@ app.include_router(company_config.router)
 app.include_router(sql_variables.router)
 app.include_router(dashboard.router)
 app.include_router(cobranca.router)
+
+from .routers import meta as meta_router
+from .routers import webhook as webhook_router
+app.include_router(meta_router.router)
+app.include_router(webhook_router.router)
 
 
 @app.get("/health")

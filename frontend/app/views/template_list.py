@@ -13,15 +13,18 @@ from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.api import template_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager
 
 
-CATEGORY_COLORS = {
-    "TRANSACTIONAL": "#22c55e",
-    "PROMOTION": "#f8891d",
-    "AUTHENTICATION": "#1a6bc7",
-    "ISSUE": "#ef4444",
-    "MARKETING": "#a855f7",
-}
+def _category_colors():
+    t = theme_manager.current()
+    return {
+        "TRANSACTIONAL": t.success,
+        "PROMOTION": t.warning,
+        "AUTHENTICATION": t.info,
+        "ISSUE": t.danger,
+        "MARKETING": t.accent_purple,
+    }
 
 CATEGORY_LABELS = {
     "TRANSACTIONAL": "Transaccional",
@@ -48,12 +51,12 @@ class TemplateListView(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Templates")
-        title.setStyleSheet("font-size: 28px; font-weight: 700; color: #f1f5f9; ")
+        title.setStyleSheet("font-size: 28px; font-weight: 700;")
         header.addWidget(title)
         header.addStretch()
 
         filter_label = QLabel("Categoria:")
-        filter_label.setStyleSheet("font-size: 13px; color: #64748b;")
+        filter_label.setStyleSheet("font-size: 13px;")
         header.addWidget(filter_label)
 
         self.category_filter = QComboBox()
@@ -97,6 +100,8 @@ class TemplateListView(QWidget):
         )
 
     def _on_templates(self, templates: list, filter_category: str = None):
+        theme = theme_manager.current()
+        cat_colors = _category_colors()
         self.table.clear_all()
         for t in templates:
             category = t.get("category", "")
@@ -120,7 +125,7 @@ class TemplateListView(QWidget):
 
             row_data = {
                 "data": t,
-                "category_color": CATEGORY_COLORS.get(category, "#64748b"),
+                "category_color": cat_colors.get(category, theme.text_secondary),
             }
             self.table.add_row(
                 [

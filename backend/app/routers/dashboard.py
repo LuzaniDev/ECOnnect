@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..deps import get_current_user
@@ -28,6 +28,7 @@ async def dashboard_summary(
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
 
     async def fetch_one(query):
         return (await db.execute(query)).scalar() or 0
@@ -56,12 +57,12 @@ async def dashboard_summary(
         Request.created_at >= today_start,
     ))
 
-    # requests over time (last 7 days)
+    # requests over time (last 14 days)
     req_time_q = select(
         func.date(Request.created_at),
         func.count(Request.id),
     ).join(Request.creator).where(
-        Request.created_at >= week_ago,
+        Request.created_at >= two_weeks_ago,
     )
     if cf:
         req_time_q = req_time_q.where(*cf)
@@ -71,6 +72,128 @@ async def dashboard_summary(
     req_time_result = await db.execute(req_time_q)
     requests_over_time = [
         {"date": str(d), "count": c} for d, c in req_time_result.all()
+    ]
+
+    # daily breakdown by status (last 14 days)
+    req_by_status_day_q = select(
+        func.date(Request.created_at),
+        func.count(case((Request.status == "sent", 1))),
+        func.count(case((Request.status == "pending", 1))),
+        func.count(case((Request.status == "cancelled", 1))),
+    ).join(Request.creator).where(
+        Request.created_at >= two_weeks_ago,
+    )
+    if cf:
+        req_by_status_day_q = req_by_status_day_q.where(*cf)
+    req_by_status_day_q = req_by_status_day_q.group_by(
+        func.date(Request.created_at)
+    ).order_by(func.date(Request.created_at))
+    req_by_status_result = await db.execute(req_by_status_day_q)
+    requests_by_status_day = [
+        {"date": str(d), "sent": s, "pending": p, "cancelled": c}
+        for d, s, p, c in req_by_status_result.all()
+    ]
+
+    # requests by template (top 10)
+    req_by_template_q = select(
+        Template.name,
+        func.count(Request.id),
+    ).join(Request, Request.template_id == Template.id).join(Request.creator)
+    if cf:
+        req_by_template_q = req_by_template_q.where(*cf)
+    req_by_template_q = req_by_template_q.group_by(Template.name).order_by(
+        func.count(Request.id).desc()
+    ).limit(10)
+    req_by_template_result = await db.execute(req_by_template_q)
+    requests_by_template = [
+        {"name": n, "count": c} for n, c in req_by_template_result.all()
+    ]
+
+    # requests by tag
+    req_by_tag_q = select(
+        func.coalesce(Request.tag, "sem tag"),
+        func.count(Request.id),
+    ).join(Request.creator)
+    if cf:
+        req_by_tag_q = req_by_tag_q.where(*cf)
+    req_by_tag_q = req_by_tag_q.group_by(Request.tag).order_by(
+        func.count(Request.id).desc()
+    )
+    req_by_tag_result = await db.execute(req_by_tag_q)
+    requests_by_tag = [
+        {"tag": t, "count": c} for t, c in req_by_tag_result.all()
+    ]
+
+    # requests by user (top 5)
+    req_by_user_q = select(
+        Request.created_by,
+        User.username,
+        func.count(Request.id),
+    ).join(Request.creator)
+    if cf:
+        req_by_user_q = req_by_user_q.where(*cf)
+    req_by_user_q = req_by_user_q.group_by(
+        Request.created_by, User.username
+    ).order_by(func.count(Request.id).desc()).limit(5)
+    req_by_user_result = await db.execute(req_by_user_q)
+    requests_by_user = [
+        {"user_id": str(uid), "username": un, "count": c}
+        for uid, un, c in req_by_user_result.all()
+    ]
+
+    # weekly comparison
+    this_week_start = now - timedelta(days=now.weekday())
+    last_week_start = this_week_start - timedelta(days=7)
+    this_week = await fetch_one(
+        req_query(Request.created_at >= this_week_start)
+    )
+    last_week = await fetch_one(
+        req_query(
+            Request.created_at >= last_week_start,
+            Request.created_at < this_week_start,
+        )
+    )
+    # Weekly breakdown by status
+    def _week_counts(start, end=None):
+        conditions = [Request.created_at >= start]
+        if end:
+            conditions.append(Request.created_at < end)
+        return {
+            s: fetch_one(req_query(Request.status == s, *conditions))
+            for s in ("sent", "pending", "cancelled")
+        }
+
+    tw_sent = await fetch_one(req_query(
+        Request.status == "sent",
+        Request.created_at >= this_week_start,
+    ))
+    tw_pending = await fetch_one(req_query(
+        Request.status == "pending",
+        Request.created_at >= this_week_start,
+    ))
+    tw_cancelled = await fetch_one(req_query(
+        Request.status == "cancelled",
+        Request.created_at >= this_week_start,
+    ))
+    lw_sent = await fetch_one(req_query(
+        Request.status == "sent",
+        Request.created_at >= last_week_start,
+        Request.created_at < this_week_start,
+    ))
+    lw_pending = await fetch_one(req_query(
+        Request.status == "pending",
+        Request.created_at >= last_week_start,
+        Request.created_at < this_week_start,
+    ))
+    lw_cancelled = await fetch_one(req_query(
+        Request.status == "cancelled",
+        Request.created_at >= last_week_start,
+        Request.created_at < this_week_start,
+    ))
+
+    weekly_comparison = [
+        {"week": "Semana Passada", "sent": lw_sent, "pending": lw_pending, "cancelled": lw_cancelled, "total": last_week},
+        {"week": "Esta Semana", "sent": tw_sent, "pending": tw_pending, "cancelled": tw_cancelled, "total": this_week},
     ]
 
     # ── Integrations ──────────────────────────────────
@@ -90,6 +213,16 @@ async def dashboard_summary(
         )
     )
 
+    # Integration type distribution
+    integ_type_q = select(
+        IntegrationConfig.type, func.count(IntegrationConfig.id)
+    ).where(*integ_where).group_by(IntegrationConfig.type)
+    integ_type_result = await db.execute(integ_type_q)
+    integration_types = [
+        {"type": t or "outro", "count": c}
+        for t, c in integ_type_result.all()
+    ]
+
     # ── Users & Templates ─────────────────────────────
     total_users = await fetch_one(
         select(func.count(User.id)).where(User.eco_empresa == eco)
@@ -107,7 +240,7 @@ async def dashboard_summary(
     ).join(AuditLog.user)
     if cf:
         audit_q = audit_q.where(*cf)
-    audit_q = audit_q.order_by(AuditLog.created_at.desc()).limit(5)
+    audit_q = audit_q.order_by(AuditLog.created_at.desc()).limit(10)
     audit_result = await db.execute(audit_q)
     recent_activity = [
         {"username": u, "action": a, "entity": e, "created_at": str(c)}
@@ -159,6 +292,12 @@ async def dashboard_summary(
         "users": total_users,
         "templates": total_templates,
         "requests_over_time": requests_over_time,
+        "requests_by_status_day": requests_by_status_day,
+        "requests_by_template": requests_by_template,
+        "requests_by_tag": requests_by_tag,
+        "requests_by_user": requests_by_user,
+        "weekly_comparison": weekly_comparison,
+        "integration_types": integration_types,
         "recent_activity": recent_activity,
         "upcoming_schedules": upcoming_schedules,
         "recent_runs": recent_runs,

@@ -1,20 +1,12 @@
 from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QDialogButtonBox
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QWindow
+from PySide6.QtGui import QWindow, QColor
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager
 
 
 DIALOG_BASE_STYLE = """
-QMessageBox {
-    background-color: #0a1220;
-    color: #f1f5f9;
-}
-QLabel {
-    color: #f1f5f9;
-    font-size: 13px;
-}
 QPushButton {
-    color: white;
     border: none;
     border-radius: 6px;
     padding: 8px 24px;
@@ -25,6 +17,7 @@ QPushButton {
 
 
 def show_error(parent, title: str, message: str):
+    t = theme_manager.current()
     logger.error("DIALOG", f"{title}: {message}")
     msg = QMessageBox(parent)
     msg.setIcon(QMessageBox.Critical)
@@ -33,13 +26,16 @@ def show_error(parent, title: str, message: str):
     msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
     msg.setStyleSheet(
         DIALOG_BASE_STYLE
-        + """
-        QPushButton {
-            background-color: #ef4444;
-        }
-        QPushButton:hover {
-            background-color: #f87171;
-        }
+        + f"""
+        QMessageBox {{ background-color: {t.bg}; color: {t.text}; }}
+        QLabel {{ color: {t.text}; }}
+        QPushButton {{
+            background-color: {t.danger};
+            color: {t.selection_text};
+        }}
+        QPushButton:hover {{
+            background-color: {t.danger_hover};
+        }}
     """
     )
     msg.show()
@@ -49,6 +45,7 @@ def show_error(parent, title: str, message: str):
 
 
 def show_success(parent, title: str, message: str):
+    t = theme_manager.current()
     logger.info("DIALOG", f"{title}: {message}")
     msg = QMessageBox(parent)
     msg.setIcon(QMessageBox.Information)
@@ -56,13 +53,16 @@ def show_success(parent, title: str, message: str):
     msg.setText(message)
     msg.setStyleSheet(
         DIALOG_BASE_STYLE
-        + """
-        QPushButton {
-            background-color: #22c55e;
-        }
-        QPushButton:hover {
-            background-color: #34d16e;
-        }
+        + f"""
+        QMessageBox {{ background-color: {t.bg}; color: {t.text}; }}
+        QLabel {{ color: {t.text}; }}
+        QPushButton {{
+            background-color: {t.success};
+            color: {t.selection_text};
+        }}
+        QPushButton:hover {{
+            background-color: {t.success_hover};
+        }}
     """
     )
     msg.exec()
@@ -71,15 +71,16 @@ def show_success(parent, title: str, message: str):
 class InputDialog(QDialog):
     def __init__(self, parent, title: str, label: str, default: str = ""):
         super().__init__(parent)
+        self._t = theme_manager.current()
         self.setWindowTitle(title)
         self.setMinimumSize(500, 300)
-        self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QTextEdit {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 6px;
-            }
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {self._t.bg}; color: {self._t.text}; }}
+            QLabel {{ color: {self._t.text}; }}
+            QTextEdit {{
+                background-color: {self._t.bg}; color: {self._t.text};
+                border: 1px solid {self._t.border}; border-radius: 4px; padding: 6px;
+            }}
         """)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -104,6 +105,7 @@ class InputDialog(QDialog):
 
 
 def show_confirm(parent, title: str, message: str) -> bool:
+    t = theme_manager.current()
     msg = QMessageBox(parent)
     msg.setIcon(QMessageBox.Question)
     msg.setWindowTitle(title)
@@ -112,16 +114,16 @@ def show_confirm(parent, title: str, message: str) -> bool:
     msg.setDefaultButton(QMessageBox.No)
     msg.setStyleSheet(
         DIALOG_BASE_STYLE
-        + """
-        QPushButton {
-            background-color: #014998;
-        }
-        QPushButton:hover {
-            background-color: #025db8;
-        }
-        QPushButton[class="yes"] {
-            background-color: #f8891d;
-        }
+        + f"""
+        QMessageBox {{ background-color: {t.bg}; color: {t.text}; }}
+        QLabel {{ color: {t.text}; }}
+        QPushButton {{
+            background-color: {t.primary};
+            color: {t.selection_text};
+        }}
+        QPushButton:hover {{
+            background-color: {t.primary_hover};
+        }}
     """
     )
     return msg.exec() == QMessageBox.Yes

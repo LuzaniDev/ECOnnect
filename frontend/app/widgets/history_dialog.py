@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -11,13 +12,16 @@ from PySide6.QtWidgets import (
     QFrame,
     QAbstractItemView,
 )
+from frontend.app.core.theme import theme_manager
 
 
-STATUS_COLORS = {
-    "Pendente": "#f8891d",
-    "Enviado": "#22c55e",
-    "Cancelado": "#ef4444",
-}
+def _status_colors():
+    t = theme_manager.current()
+    return {
+        "Pendente": t.warning,
+        "Enviado": t.success,
+        "Cancelado": t.danger,
+    }
 
 
 class HistoryDialog(QDialog):
@@ -25,34 +29,14 @@ class HistoryDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Histórico — {phone}")
         self.setMinimumSize(700, 500)
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #0a1220;
-                color: #f1f5f9;
-            }
-            QLabel#title {
-                font-size: 18px;
-                font-weight: 700;
-                color: #f1f5f9;
-                padding: 20px 24px 4px 24px;
-                
-            }
-            QLabel#phone_label {
-                font-size: 13px;
-                color: #64748b;
-                padding: 0 24px 16px 24px;
-            }
-        """
-        )
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         header_frame = QFrame()
+        t = theme_manager.current()
         header_frame.setStyleSheet(
-            "QFrame { background-color: #141d32; border-bottom: 1px solid #1e2d4a; }"
+            f"QFrame {{ background-color: {t.surface}; border-bottom: 1px solid {t.border}; }}"
         )
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -79,34 +63,8 @@ class HistoryDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        self.table.setStyleSheet(
-            """
-            QTableWidget {
-                background-color: #0d1525;
-                border: none;
-                color: #f1f5f9;
-                font-size: 13px;
-            }
-            QTableWidget::item {
-                padding: 10px 14px;
-                border-bottom: 1px solid #1a2640;
-            }
-            QTableWidget::item:selected {
-                background-color: rgba(1, 73, 152, 0.3);
-            }
-            QTableWidget::item:alternate {
-                background-color: #0a1220;
-            }
-            QHeaderView::section {
-                background-color: #0a1220;
-                color: #94a3b8;
-                padding: 12px 14px;
-                border: none;
-                border-bottom: 2px solid #014998;
-                font-weight: bold;
-                font-size: 12px;
-            }
-        """
+        self.table.horizontalHeader().setStyleSheet(
+            "font-size: 12px;"
         )
 
         self.table.setRowCount(len(requests))
@@ -135,8 +93,9 @@ class HistoryDialog(QDialog):
 
             status_item = self.table.item(i, 4)
             if status_item:
-                color = STATUS_COLORS.get(status, "#64748b")
-                status_item.setForeground(color)
+                colors = _status_colors()
+                color = colors.get(status, theme_manager.current().text_secondary)
+                status_item.setForeground(QColor(color))
 
         layout.addWidget(self.table)
 
@@ -144,20 +103,7 @@ class HistoryDialog(QDialog):
         btn_layout.addStretch()
 
         close_btn = QPushButton("Fechar")
-        close_btn.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #014998;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 28px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover { background-color: #025db8; }
-        """
-        )
+        close_btn.setProperty("primary", True)
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
         btn_layout.setContentsMargins(16, 12, 16, 12)

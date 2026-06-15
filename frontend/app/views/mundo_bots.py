@@ -19,6 +19,7 @@ from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.core.logger import logger
 from frontend.app.core.firebird_client import fb
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
 COBRANCA_SQL = """
@@ -175,25 +176,6 @@ TAG_COOLDOWN_FILE = os.path.join(DATA_DIR, "tag_cooldown_config.json")
 SENT_HISTORY_FILE = os.path.join(DATA_DIR, "sent_history.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-TAB_STYLE = """
-QTabWidget::pane {
-    background: transparent; border: none;
-}
-QTabBar::tab {
-    background: transparent; color: #8b949e;
-    padding: 8px 20px; font-size: 13px; font-weight: 600;
-    border: none; border-bottom: 2px solid transparent;
-    margin: 0 2px;
-}
-QTabBar::tab:selected {
-    color: #f1f5f9; border-bottom: 2px solid #1f6feb;
-}
-QTabBar::tab:hover {
-    color: #c9d1d9;
-}
-"""
-
-
 class MundoBotsView(QWidget):
     def __init__(self, token: str, user: dict):
         super().__init__()
@@ -226,13 +208,33 @@ class MundoBotsView(QWidget):
                         key = (str(c[0]), str(c[1]))
                     self._configured_set.add(key)
 
+    def _get_tab_style(self) -> str:
+        t = theme_manager.current()
+        return f"""
+QTabWidget::pane {{
+    background: transparent; border: none;
+}}
+QTabBar::tab {{
+    background: transparent; color: {t.text_secondary};
+    padding: 8px 20px; font-size: 13px; font-weight: 600;
+    border: none; border-bottom: 2px solid transparent;
+    margin: 0 2px;
+}}
+QTabBar::tab:selected {{
+    color: {t.text}; border-bottom: 2px solid {t.primary};
+}}
+QTabBar::tab:hover {{
+    color: {t.text};
+}}
+"""
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(TAB_STYLE)
+        self.tabs.setStyleSheet(self._get_tab_style())
         layout.addWidget(self.tabs)
 
         self.tabs.addTab(self._build_cobranca_tab(), "Cobrança em Lote")
@@ -242,28 +244,29 @@ class MundoBotsView(QWidget):
     # ================== COBRANCA TAB ==================
 
     def _build_cobranca_tab(self) -> QWidget:
+        t = theme_manager.current()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #0d1117; border: none; }")
+        scroll.setStyleSheet(f"QScrollArea {{ background: {t.bg}; border: none; }}")
 
         container = QWidget()
-        container.setStyleSheet("background: #0d1117;")
+        container.setStyleSheet(f"background: {t.bg};")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
         # ── Filters ──
         filter_card = QFrame()
-        filter_card.setStyleSheet("""
-            QFrame { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        filter_card.setStyleSheet(f"""
+            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}
         """)
         filter_layout = QVBoxLayout(filter_card)
         filter_layout.setContentsMargins(20, 16, 20, 16)
         filter_layout.setSpacing(12)
 
         filter_title = QLabel("FILTROS")
-        filter_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px;")
+        filter_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         filter_layout.addWidget(filter_title)
 
         date_row = QHBoxLayout()
@@ -272,7 +275,7 @@ class MundoBotsView(QWidget):
         self.dt_ini = QDateEdit()
         self.dt_ini.setCalendarPopup(True)
         self.dt_ini.setDate(QDate.currentDate().addMonths(-1))
-        self.dt_ini.setStyleSheet("background: #0d1117; border: 1px solid #30363d; border-radius: 4px; padding: 6px; color: #c9d1d9;")
+        self.dt_ini.setStyleSheet(f"background: {t.bg}; border: 1px solid {t.border}; border-radius: 4px; padding: 6px; color: {t.text};")
         date_row.addWidget(self.dt_ini)
         date_row.addWidget(QLabel("Vencimento final:"))
         self.dt_fim = QDateEdit()
@@ -285,10 +288,10 @@ class MundoBotsView(QWidget):
 
         self.btn_filtrar = QPushButton("Filtrar")
         self.btn_filtrar.setCursor(Qt.PointingHandCursor)
-        self.btn_filtrar.setStyleSheet("""
-            QPushButton { background: #1f6feb; color: #fff; border: none;
-                border-radius: 6px; padding: 8px 24px; font-size: 13px; font-weight: 700; }
-            QPushButton:hover { background: #388bfd; }
+        self.btn_filtrar.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: 6px; padding: 8px 24px; font-size: 13px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
         """)
         self.btn_filtrar.clicked.connect(self._filtrar)
         btn_row = QHBoxLayout()
@@ -299,11 +302,11 @@ class MundoBotsView(QWidget):
         # Pagination row
         page_row = QHBoxLayout()
         self.lbl_loading = QLabel("Nenhum")
-        self.lbl_loading.setStyleSheet("font-size: 12px; color: #8b949e; font-weight: 600;")
+        self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         page_row.addWidget(self.lbl_loading)
 
         self.lbl_configured_hidden = QLabel("0 clientes ocultos")
-        self.lbl_configured_hidden.setStyleSheet("font-size: 12px; color: #8b949e;")
+        self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         self.lbl_configured_hidden.setCursor(Qt.PointingHandCursor)
         self.lbl_configured_hidden.mousePressEvent = lambda e: self._show_hidden_clients_dialog()
         page_row.addWidget(self.lbl_configured_hidden)
@@ -312,12 +315,12 @@ class MundoBotsView(QWidget):
 
         self.btn_prev = QPushButton("< Anterior")
         self.btn_prev.setEnabled(False)
-        self.btn_prev.setStyleSheet("""
-            QPushButton { background: #21262d; border: 1px solid #30363d;
-                border-radius: 4px; color: #c9d1d9; padding: 6px 16px;
-                font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: #30363d; }
-            QPushButton:disabled { color: #484f58; }
+        self.btn_prev.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 4px; color: {t.text}; padding: 6px 16px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+            QPushButton:disabled {{ color: {t.text_muted}; }}
         """)
         self.btn_prev.clicked.connect(self._pag_prev)
         page_row.addWidget(self.btn_prev)
@@ -333,7 +336,7 @@ class MundoBotsView(QWidget):
 
         # ── Results Table ──
         results_label = QLabel("RESULTADOS")
-        results_label.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px;")
+        results_label.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         layout.addWidget(results_label)
 
         self.table = QTableWidget()
@@ -355,27 +358,27 @@ class MundoBotsView(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.setMinimumHeight(200)
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; font-size: 12px; }
-            QTableWidget::item { padding: 6px; }
-            QTableWidget::item:selected { background-color: rgba(31,111,235,0.3); }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 8px; font-weight: 600; font-size: 11px; }
+        self.table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+            QTableWidget::item {{ padding: 6px; }}
+            QTableWidget::item:selected {{ background-color: rgba({_hex_to_rgb(t.primary)},0.3); }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
         """)
         layout.addWidget(self.table, 1)
         self.table.itemChanged.connect(self._on_check_changed)
 
         # ── Preview ──
         preview_card = QFrame()
-        preview_card.setStyleSheet("QFrame { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }")
+        preview_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}")
         preview_layout = QVBoxLayout(preview_card)
         preview_layout.setContentsMargins(20, 12, 20, 12)
         preview_layout.setSpacing(8)
 
         preview_header = QHBoxLayout()
         preview_title = QLabel("PRÉVIA DO ENVIO")
-        preview_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px;")
+        preview_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         preview_header.addWidget(preview_title)
         preview_header.addStretch()
         preview_layout.addLayout(preview_header)
@@ -384,27 +387,27 @@ class MundoBotsView(QWidget):
         self.preview_text.setReadOnly(True)
         self.preview_text.setMinimumHeight(80)
         self.preview_text.setMaximumHeight(150)
-        self.preview_text.setStyleSheet("""
-            QTextEdit { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 8px; color: #c9d1d9;
-                font-size: 11px; font-family: Consolas, monospace; }
+        self.preview_text.setStyleSheet(f"""
+            QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 8px; color: {t.text};
+                font-size: 11px; font-family: Consolas, monospace; }}
         """)
         preview_layout.addWidget(self.preview_text)
         layout.addWidget(preview_card)
 
         # ── Selected + Actions ──
         actions_card = QFrame()
-        actions_card.setStyleSheet("QFrame { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }")
+        actions_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}")
         actions_layout = QVBoxLayout(actions_card)
         actions_layout.setContentsMargins(20, 16, 20, 16)
         actions_layout.setSpacing(10)
 
         sel_header = QHBoxLayout()
         sel_title = QLabel("SELECIONADOS PARA ENVIO")
-        sel_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px;")
+        sel_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         sel_header.addWidget(sel_title)
         self.lbl_selected_count = QLabel("0 clientes")
-        self.lbl_selected_count.setStyleSheet("font-size: 12px; color: #58a6ff; font-weight: 600;")
+        self.lbl_selected_count.setStyleSheet(f"font-size: 12px; color: {t.accent_blue}; font-weight: 600;")
         sel_header.addWidget(self.lbl_selected_count)
         sel_header.addStretch()
         actions_layout.addLayout(sel_header)
@@ -414,9 +417,9 @@ class MundoBotsView(QWidget):
         template_row.addWidget(QLabel("Template:"))
         self.cmb_template = QComboBox()
         self.cmb_template.setMinimumWidth(250)
-        self.cmb_template.setStyleSheet("""
-            QComboBox { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.cmb_template.setStyleSheet(f"""
+            QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         self.cmb_template.currentIndexChanged.connect(self._update_preview)
         template_row.addWidget(self.cmb_template)
@@ -424,11 +427,11 @@ class MundoBotsView(QWidget):
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
-        self.btn_cancelar.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px solid #f85149;
+        self.btn_cancelar.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.danger};
                 border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; color: #f85149; }
-            QPushButton:hover { background: rgba(248,81,73,0.1); }
+                font-size: 13px; font-weight: 700; color: {t.danger}; }}
+            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
         """)
         self.btn_cancelar.setEnabled(False)
         self.btn_cancelar.clicked.connect(self._cancelar_selecao)
@@ -436,12 +439,12 @@ class MundoBotsView(QWidget):
 
         self.btn_configurar = QPushButton("Configurar")
         self.btn_configurar.setCursor(Qt.PointingHandCursor)
-        self.btn_configurar.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px solid #d29922;
+        self.btn_configurar.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.warning};
                 border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; color: #d29922; }
-            QPushButton:hover { background: rgba(210,153,34,0.1); }
-            QPushButton:disabled { border-color: #30363d; color: #484f58; }
+                font-size: 13px; font-weight: 700; color: {t.warning}; }}
+            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.warning)},0.1); }}
+            QPushButton:disabled {{ border-color: {t.border}; color: {t.text_muted}; }}
         """)
         self.btn_configurar.setEnabled(False)
         self.btn_configurar.clicked.connect(self._configurar)
@@ -449,12 +452,12 @@ class MundoBotsView(QWidget):
 
         self.btn_enviar = QPushButton("Enviar Agora")
         self.btn_enviar.setCursor(Qt.PointingHandCursor)
-        self.btn_enviar.setStyleSheet("""
-            QPushButton { background: #3fb950; color: #fff; border: none;
+        self.btn_enviar.setStyleSheet(f"""
+            QPushButton {{ background: {t.success}; color: {t.selection_text}; border: none;
                 border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; }
-            QPushButton:hover { background: #4cda64; }
-            QPushButton:disabled { background: #21262d; color: #484f58; }
+                font-size: 13px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.success_hover}; }}
+            QPushButton:disabled {{ background: {t.surface_elevated}; color: {t.text_muted}; }}
         """)
         self.btn_enviar.setEnabled(False)
         self.btn_enviar.clicked.connect(self._enviar)
@@ -473,6 +476,7 @@ class MundoBotsView(QWidget):
     # ================== CLIENTES CONFIGURADOS TAB ==================
 
     def _build_clientes_tab(self) -> QWidget:
+        t = theme_manager.current()
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -480,17 +484,17 @@ class MundoBotsView(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Clientes Configurados")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #c9d1d9;")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {t.text};")
         header.addWidget(title)
         header.addStretch()
 
         btn_refresh_jobs = QPushButton("Atualizar")
         btn_refresh_jobs.setCursor(Qt.PointingHandCursor)
-        btn_refresh_jobs.setStyleSheet("""
-            QPushButton { background: #21262d; border: 1px solid #30363d;
-                border-radius: 6px; color: #c9d1d9; padding: 8px 16px;
-                font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: #30363d; }
+        btn_refresh_jobs.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 16px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_refresh_jobs.clicked.connect(self._refresh_clientes_tab)
         header.addWidget(btn_refresh_jobs)
@@ -513,12 +517,12 @@ class MundoBotsView(QWidget):
         self.jobs_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.jobs_table.verticalHeader().setVisible(False)
         self.jobs_table.verticalHeader().setDefaultSectionSize(40)
-        self.jobs_table.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; font-size: 12px; }
-            QTableWidget::item { padding: 6px; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 8px; font-weight: 600; font-size: 11px; }
+        self.jobs_table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+            QTableWidget::item {{ padding: 6px; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
         """)
         layout.addWidget(self.jobs_table, 1)
 
@@ -526,6 +530,7 @@ class MundoBotsView(QWidget):
         return container
 
     def _refresh_clientes_tab(self):
+        t = theme_manager.current()
         jobs = self._load_jobs()
         self.jobs_table.setRowCount(0)
         for j in jobs:
@@ -547,38 +552,37 @@ class MundoBotsView(QWidget):
             status = j.get("status", "pending")
             status_item = QTableWidgetItem(status.upper())
             if status == "pending":
-                status_item.setForeground(QColor("#d29922"))
+                status_item.setForeground(QColor(t.warning))
             elif status in ("sent",):
-                status_item.setForeground(Qt.green)
+                status_item.setForeground(QColor(t.success))
             elif status in ("partial",):
-                status_item.setForeground(QColor("#f8891d"))
+                status_item.setForeground(QColor(t.warning))
             elif status == "error":
-                status_item.setForeground(Qt.red)
+                status_item.setForeground(QColor(t.danger))
             self.jobs_table.setItem(row, 5, status_item)
 
             btn_ver = QPushButton("Ver")
-            btn_ver.setStyleSheet("""
-                QPushButton { background: transparent; border: 1px solid #58a6ff;
-                    border-radius: 4px; color: #58a6ff; padding: 4px 12px;
-                    font-size: 11px; font-weight: 600; }
-                QPushButton:hover { background: rgba(88,166,255,0.1); }
+            btn_ver.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.accent_blue};
+                    border-radius: 3px; color: {t.accent_blue}; padding: 2px 8px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba({_hex_to_rgb(t.accent_blue)},0.1); }}
             """)
             btn_ver.clicked.connect(lambda checked, jid=j["id"]: self._show_job_clients_dialog(jid))
 
             if status == "pending":
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
-                actions_layout.setContentsMargins(6, 3, 6, 3)
-                actions_layout.setSpacing(6)
+                actions_layout.setContentsMargins(4, 2, 4, 2)
+                actions_layout.setSpacing(4)
                 actions_layout.addWidget(btn_ver)
 
                 btn_cancel = QPushButton("Cancelar")
-                btn_cancel.setMinimumWidth(75)
-                btn_cancel.setStyleSheet("""
-                    QPushButton { background: transparent; border: 1px solid #f85149;
-                        border-radius: 4px; color: #f85149; padding: 4px 10px;
-                        font-size: 11px; font-weight: 600; }
-                    QPushButton:hover { background: rgba(248,81,73,0.1); }
+                btn_cancel.setStyleSheet(f"""
+                    QPushButton {{ background: transparent; border: 1px solid {t.danger};
+                        border-radius: 3px; color: {t.danger}; padding: 2px 8px;
+                        font-size: 10px; font-weight: 600; }}
+                    QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
                 """)
                 btn_cancel.clicked.connect(lambda checked, jid=j["id"]: self._cancelar_job(jid))
                 actions_layout.addWidget(btn_cancel)
@@ -591,18 +595,19 @@ class MundoBotsView(QWidget):
 
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
-                actions_layout.setContentsMargins(6, 3, 6, 3)
-                actions_layout.setSpacing(6)
+                actions_layout.setContentsMargins(4, 2, 4, 2)
+                actions_layout.setSpacing(4)
                 actions_layout.addWidget(btn_ver)
 
                 lbl_result = QLabel(result_text)
-                lbl_result.setStyleSheet("font-size: 11px; color: #8b949e;")
+                lbl_result.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
                 actions_layout.addWidget(lbl_result)
                 self.jobs_table.setCellWidget(row, 6, actions_widget)
 
         self.jobs_table.setRowCount(len(jobs))
 
     def _show_job_clients_dialog(self, job_id: str):
+        t = theme_manager.current()
         jobs = self._load_jobs()
         job = None
         for j in jobs:
@@ -617,9 +622,9 @@ class MundoBotsView(QWidget):
         dlg = QDialog(self)
         dlg.setWindowTitle(f"Clientes - {job.get('name', '')}")
         dlg.resize(600, 400)
-        dlg.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; font-size: 13px; }
+        dlg.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+            QLabel {{ color: {t.text}; font-size: 13px; }}
         """)
 
         layout = QVBoxLayout(dlg)
@@ -627,11 +632,11 @@ class MundoBotsView(QWidget):
         layout.setSpacing(12)
 
         title = QLabel(f"{job.get('name', '')} — {len(job.get('clients', []))} cliente(s)")
-        title.setStyleSheet("font-size: 18px; font-weight: 800; color: #f1f5f9;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {t.text};")
         layout.addWidget(title)
 
         info = QLabel(f"Template: {job.get('template_name', '')} · Tag: {job.get('tag', '-')} · Status: {job.get('status', 'pending').upper()}")
-        info.setStyleSheet("font-size: 12px; color: #8b949e;")
+        info.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         layout.addWidget(info)
 
         table = QTableWidget()
@@ -644,11 +649,11 @@ class MundoBotsView(QWidget):
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionMode(QTableWidget.NoSelection)
-        table.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; font-size: 12px; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 6px; font-weight: 600; font-size: 11px; }
+        table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
         """)
 
         for c in job.get("clients", []):
@@ -665,11 +670,11 @@ class MundoBotsView(QWidget):
         layout.addWidget(table, 1)
 
         btn_fechar = QPushButton("Fechar")
-        btn_fechar.setStyleSheet("""
-            QPushButton { background: #21262d; border: 1px solid #30363d;
-                border-radius: 6px; color: #c9d1d9; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }
-            QPushButton:hover { background: #30363d; }
+        btn_fechar.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 20px;
+                font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
 
@@ -683,20 +688,21 @@ class MundoBotsView(QWidget):
     # ================== TEMPLATE TAB ==================
 
     def _build_template_tab(self) -> QWidget:
+        t = theme_manager.current()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #0d1117; border: none; }")
+        scroll.setStyleSheet(f"QScrollArea {{ background: {t.bg}; border: none; }}")
 
         container = QWidget()
-        container.setStyleSheet("background: #0d1117;")
+        container.setStyleSheet(f"background: {t.bg};")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
         header = QHBoxLayout()
         title = QLabel("Criar Template")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #c9d1d9;")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {t.text};")
         header.addWidget(title)
         header.addStretch()
         layout.addLayout(header)
@@ -707,36 +713,36 @@ class MundoBotsView(QWidget):
         manage_row.addWidget(QLabel("Template:"))
         self.cmb_saved_templates = QComboBox()
         self.cmb_saved_templates.setMinimumWidth(250)
-        self.cmb_saved_templates.setStyleSheet("""
-            QComboBox { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.cmb_saved_templates.setStyleSheet(f"""
+            QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         self.cmb_saved_templates.currentIndexChanged.connect(self._load_selected_template)
         manage_row.addWidget(self.cmb_saved_templates)
 
         self.template_name_input = QLineEdit()
         self.template_name_input.setPlaceholderText("Nome do template...")
-        self.template_name_input.setStyleSheet("""
-            QLineEdit { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.template_name_input.setStyleSheet(f"""
+            QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         manage_row.addWidget(self.template_name_input, 1)
 
         btn_save_template = QPushButton("Salvar")
-        btn_save_template.setStyleSheet("""
-            QPushButton { background: #238636; color: #fff; border: none;
-                border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: #2ea043; }
+        btn_save_template.setStyleSheet(f"""
+            QPushButton {{ background: {t.success}; color: {t.selection_text}; border: none;
+                border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.success_hover}; }}
         """)
         btn_save_template.clicked.connect(self._save_template)
         manage_row.addWidget(btn_save_template)
 
         btn_delete_template = QPushButton("Excluir")
-        btn_delete_template.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px solid #f85149;
-                border-radius: 4px; color: #f85149; padding: 6px 16px;
-                font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: rgba(248,81,73,0.1); }
+        btn_delete_template.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.danger};
+                border-radius: 4px; color: {t.danger}; padding: 6px 16px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
         """)
         btn_delete_template.clicked.connect(self._delete_template)
         manage_row.addWidget(btn_delete_template)
@@ -749,9 +755,9 @@ class MundoBotsView(QWidget):
         tag_row.addWidget(QLabel("Tag:"))
         self.tmpl_tag = QLineEdit()
         self.tmpl_tag.setPlaceholderText("cobrança, promoção, aviso...")
-        self.tmpl_tag.setStyleSheet("""
-            QLineEdit { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.tmpl_tag.setStyleSheet(f"""
+            QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         tag_row.addWidget(self.tmpl_tag, 1)
         layout.addLayout(tag_row)
@@ -763,25 +769,25 @@ class MundoBotsView(QWidget):
         self.tmpl_method.addItems(["POST", "GET", "PUT", "PATCH", "DELETE"])
         self.tmpl_method.setCurrentText("POST")
         self.tmpl_method.setFixedWidth(90)
-        self.tmpl_method.setStyleSheet("""
-            QComboBox { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.tmpl_method.setStyleSheet(f"""
+            QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         url_row.addWidget(self.tmpl_method)
         self.tmpl_url = QLineEdit()
         self.tmpl_url.setPlaceholderText("https://app.mundodosbots.com.br/api/users")
-        self.tmpl_url.setStyleSheet("""
-            QLineEdit { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 6px; color: #c9d1d9; font-size: 12px; }
+        self.tmpl_url.setStyleSheet(f"""
+            QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
         url_row.addWidget(self.tmpl_url, 1)
         btn_paste = QPushButton("Colar")
         btn_paste.setFixedWidth(60)
-        btn_paste.setStyleSheet("""
-            QPushButton { background: #21262d; border: 1px solid #30363d;
-                border-radius: 4px; color: #c9d1d9; padding: 6px;
-                font-size: 11px; font-weight: 600; }
-            QPushButton:hover { background: #30363d; }
+        btn_paste.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 4px; color: {t.text}; padding: 6px;
+                font-size: 11px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_paste.clicked.connect(self._import_curl_template)
         url_row.addWidget(btn_paste)
@@ -789,7 +795,7 @@ class MundoBotsView(QWidget):
 
         # Headers
         headers_label = QLabel("HEADERS")
-        headers_label.setStyleSheet("font-size: 10px; color: #8b949e; font-weight: 600; letter-spacing: 0.5px;")
+        headers_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 600; letter-spacing: 0.5px;")
         layout.addWidget(headers_label)
 
         self.tmpl_headers = QTableWidget()
@@ -803,59 +809,59 @@ class MundoBotsView(QWidget):
         self.tmpl_headers.setEditTriggers(QTableWidget.DoubleClicked)
         self.tmpl_headers.setMinimumHeight(100)
         self.tmpl_headers.setMaximumHeight(140)
-        self.tmpl_headers.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; font-size: 11px; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 4px; font-weight: 600; font-size: 10px; }
+        self.tmpl_headers.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 11px; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 4px; font-weight: 600; font-size: 10px; }}
         """)
         for key, val in DEFAULT_HEADERS:
             self._add_tmpl_header_row(key, val)
         layout.addWidget(self.tmpl_headers)
 
         btn_add_hdr = QPushButton("+ Adicionar header")
-        btn_add_hdr.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px dashed #30363d;
-                border-radius: 4px; color: #8b949e; padding: 6px;
-                font-size: 11px; font-weight: 600; }
-            QPushButton:hover { border-color: #58a6ff; color: #58a6ff; }
+        btn_add_hdr.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px dashed {t.border};
+                border-radius: 4px; color: {t.text_secondary}; padding: 6px;
+                font-size: 11px; font-weight: 600; }}
+            QPushButton:hover {{ border-color: {t.accent_blue}; color: {t.accent_blue}; }}
         """)
         btn_add_hdr.clicked.connect(lambda: self._add_tmpl_header_row())
         layout.addWidget(btn_add_hdr)
 
         # Body
         body_label = QLabel("BODY TEMPLATE")
-        body_label.setStyleSheet("font-size: 10px; color: #8b949e; font-weight: 600; letter-spacing: 0.5px;")
+        body_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 600; letter-spacing: 0.5px;")
         layout.addWidget(body_label)
 
         self.tmpl_body = QTextEdit()
         self.tmpl_body.setPlainText(DEFAULT_BODY_TEMPLATE)
         self.tmpl_body.setMinimumHeight(160)
         self.tmpl_body.setMaximumHeight(240)
-        self.tmpl_body.setStyleSheet("""
-            QTextEdit { background: #0d1117; border: 1px solid #30363d;
-                border-radius: 4px; padding: 8px; color: #c9d1d9;
-                font-size: 11px; font-family: Consolas, monospace; }
+        self.tmpl_body.setStyleSheet(f"""
+            QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 8px; color: {t.text};
+                font-size: 11px; font-family: Consolas, monospace; }}
         """)
         layout.addWidget(self.tmpl_body)
 
         # ── Variable Reference ──
         vars_label = QLabel("VARIÁVEIS DISPONÍVEIS")
-        vars_label.setStyleSheet("font-size: 10px; color: #8b949e; font-weight: 600; letter-spacing: 0.5px; margin-top: 8px;")
+        vars_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 600; letter-spacing: 0.5px; margin-top: 8px;")
         layout.addWidget(vars_label)
 
         vars_container = QFrame()
-        vars_container.setStyleSheet("""
-            QFrame { background-color: #161b22; border: 1px solid #30363d;
-                     border-radius: 6px; }
+        vars_container.setStyleSheet(f"""
+            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border};
+                     border-radius: 6px; }}
         """)
         vars_inner = QVBoxLayout(vars_container)
         vars_inner.setContentsMargins(12, 10, 12, 10)
         vars_inner.setSpacing(6)
 
-        var_desc = QLabel("Use <b>{placeholder}</b> no Body Template e Headers. Eles serão substituídos pelos dados de cada cliente.")
+        var_desc = QLabel("Use <b>{{placeholder}}</b> no Body Template e Headers. Eles serão substituídos pelos dados de cada cliente.")
         var_desc.setWordWrap(True)
-        var_desc.setStyleSheet("font-size: 11px; color: #8b949e; border: none;")
+        var_desc.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; border: none;")
         vars_inner.addWidget(var_desc)
 
         var_table = QTableWidget()
@@ -870,14 +876,14 @@ class MundoBotsView(QWidget):
         var_table.setSelectionMode(QTableWidget.NoSelection)
         var_table.setFocusPolicy(Qt.NoFocus)
         var_table.setMaximumHeight(200)
-        var_table.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #21262d; gridline-color: #21262d;
-                font-size: 11px; font-family: Consolas, monospace; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: none; border-bottom: 1px solid #30363d;
-                padding: 4px; font-weight: 600; font-size: 10px; }
-            QTableWidget::item { padding: 2px 8px; }
+        var_table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.surface_elevated}; gridline-color: {t.surface_elevated};
+                font-size: 11px; font-family: Consolas, monospace; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: none; border-bottom: 1px solid {t.border};
+                padding: 4px; font-weight: 600; font-size: 10px; }}
+            QTableWidget::item {{ padding: 2px 8px; }}
         """)
         for _, placeholder, col, sql_field, desc in VARS_INFO:
             r = var_table.rowCount()
@@ -1093,31 +1099,33 @@ class MundoBotsView(QWidget):
         }
 
     def _add_tmpl_header_row(self, key: str = "", val: str = ""):
+        t = theme_manager.current()
         row = self.tmpl_headers.rowCount()
         self.tmpl_headers.insertRow(row)
         self.tmpl_headers.setItem(row, 0, QTableWidgetItem(key))
         self.tmpl_headers.setItem(row, 1, QTableWidgetItem(val))
         btn_del = QPushButton("×")
-        btn_del.setStyleSheet("""
-            QPushButton { background: transparent; border: none;
-                color: #f85149; font-size: 16px; font-weight: 700; }
-            QPushButton:hover { color: #ff6b6b; }
+        btn_del.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none;
+                color: {t.danger}; font-size: 16px; font-weight: 700; }}
+            QPushButton:hover {{ color: {t.danger_hover}; }}
         """)
         btn_del.clicked.connect(lambda: self.tmpl_headers.removeRow(row))
         self.tmpl_headers.setCellWidget(row, 2, btn_del)
 
     def _import_curl_template(self):
+        t = theme_manager.current()
         from PySide6.QtWidgets import QDialog as QDlg, QTextEdit as QTE, QVBoxLayout as QVL, QDialogButtonBox as QDB
 
         dlg = QDlg(self)
         dlg.setWindowTitle("Importar cURL")
         dlg.resize(500, 300)
-        dlg.setStyleSheet("QDialog { background-color: #0d1117; color: #c9d1d9; }")
+        dlg.setStyleSheet(f"QDialog {{ background-color: {t.bg}; color: {t.text}; }}")
         lay = QVL(dlg)
         lay.addWidget(QLabel("Cole o comando cURL:"))
         editor = QTE()
         editor.setPlaceholderText("curl -X POST https://api.exemplo.com ...")
-        editor.setStyleSheet("background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;")
+        editor.setStyleSheet(f"background: {t.bg}; color: {t.text}; border: 1px solid {t.border};")
         lay.addWidget(editor)
         btns = QDB(QDB.Ok | QDB.Cancel)
         btns.accepted.connect(dlg.accept)
@@ -1362,6 +1370,7 @@ class MundoBotsView(QWidget):
     # ================== FILTER / PAGINATION ==================
 
     def _filtrar(self, keep_page: bool = False):
+        t = theme_manager.current()
         if not keep_page:
             self._page = 0
 
@@ -1403,18 +1412,23 @@ class MundoBotsView(QWidget):
                 self.btn_filtrar.setEnabled(True)
                 self.btn_filtrar.setText("Filtrar")
                 self.lbl_loading.setText("Carregado")
-                self.lbl_loading.setStyleSheet("font-size: 12px; color: #3fb950; font-weight: 600;")
+                self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600;")
 
                 filtered = []
                 self._hidden_clients_data = []
                 hidden_count = 0
+                seen_hidden = set()
                 for r in rows:
                     key = (str(r[0]), str(r[2]))
                     if key in self._configured_set:
-                        hidden_count += 1
-                        self._hidden_clients_data.append(r)
+                        if key not in seen_hidden:
+                            hidden_count += 1
+                            self._hidden_clients_data.append(r)
+                            seen_hidden.add(key)
                     else:
-                        filtered.append(r)
+                        if key not in seen_hidden:
+                            filtered.append(r)
+                            seen_hidden.add(key)
 
                 self._results_data = filtered
                 self._selected_rows.clear()
@@ -1441,14 +1455,14 @@ class MundoBotsView(QWidget):
                 self.btn_filtrar.setEnabled(True)
                 self.btn_filtrar.setText("Filtrar")
                 self.lbl_loading.setText("Nenhum")
-                self.lbl_loading.setStyleSheet("font-size: 12px; color: #f85149; font-weight: 600;")
+                self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
                 show_error(self, "Erro", f"Erro ao processar resultados:\n{e}")
 
         def _on_error(e):
             self.btn_filtrar.setEnabled(True)
             self.btn_filtrar.setText("Filtrar")
             self.lbl_loading.setText("Nenhum")
-            self.lbl_loading.setStyleSheet("font-size: 12px; color: #f85149; font-weight: 600;")
+            self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
             show_error(self, "Erro", f"Falha ao executar consulta:\n{e}")
 
         run_in_thread(_do_query, _on_result, _on_error)
@@ -1463,17 +1477,19 @@ class MundoBotsView(QWidget):
             self._filtrar(keep_page=True)
 
     def _update_hidden_label(self, count: int):
+        t = theme_manager.current()
         self.lbl_configured_hidden.setText(f"{count} cliente(s) oculto(s)")
         if count > 0:
-            self.lbl_configured_hidden.setStyleSheet("font-size: 12px; color: #58a6ff; text-decoration: underline;")
+            self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.accent_blue}; text-decoration: underline;")
         else:
-            self.lbl_configured_hidden.setStyleSheet("font-size: 12px; color: #8b949e;")
+            self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
 
     def _update_page_info(self):
         self.btn_prev.setEnabled(False)
         self.btn_next.setEnabled(False)
 
     def _show_hidden_clients_dialog(self):
+        t = theme_manager.current()
         if not self._hidden_clients_data:
             return
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton, QLabel
@@ -1481,9 +1497,9 @@ class MundoBotsView(QWidget):
         dlg = QDialog(self)
         dlg.setWindowTitle("Clientes Ocultos")
         dlg.resize(600, 400)
-        dlg.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; font-size: 13px; }
+        dlg.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+            QLabel {{ color: {t.text}; font-size: 13px; }}
         """)
 
         layout = QVBoxLayout(dlg)
@@ -1491,7 +1507,7 @@ class MundoBotsView(QWidget):
         layout.setSpacing(12)
 
         title = QLabel(f"Clientes ocultos ({len(self._hidden_clients_data)})")
-        title.setStyleSheet("font-size: 18px; font-weight: 800; color: #f1f5f9;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {t.text};")
         layout.addWidget(title)
 
         table = QTableWidget()
@@ -1501,17 +1517,17 @@ class MundoBotsView(QWidget):
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        table.horizontalHeader().resizeSection(3, 150)
+        table.horizontalHeader().resizeSection(3, 90)
         table.horizontalHeader().setStretchLastSection(False)
         table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(44)
+        table.verticalHeader().setDefaultSectionSize(32)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionMode(QTableWidget.NoSelection)
-        table.setStyleSheet("""
-            QTableWidget { background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d; font-size: 12px; }
-            QHeaderView::section { background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 6px; font-weight: 600; font-size: 11px; }
+        table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
         """)
 
         for i, r in enumerate(self._hidden_clients_data):
@@ -1524,14 +1540,13 @@ class MundoBotsView(QWidget):
 
             container_w = QWidget()
             container_l = QHBoxLayout(container_w)
-            container_l.setContentsMargins(4, 2, 4, 2)
+            container_l.setContentsMargins(2, 1, 2, 1)
             btn_remover = QPushButton("Remover")
-            btn_remover.setMinimumWidth(80)
-            btn_remover.setStyleSheet("""
-                QPushButton { background: transparent; border: 1px solid #f85149;
-                    border-radius: 4px; color: #f85149; padding: 4px 8px;
-                    font-size: 11px; font-weight: 600; }
-                QPushButton:hover { background: rgba(248,81,73,0.1); }
+            btn_remover.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.danger};
+                    border-radius: 3px; color: {t.danger}; padding: 2px 6px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
             """)
             btn_remover.clicked.connect(lambda checked, idx=i: self._remove_hidden_client(idx, dlg, table))
             container_l.addWidget(btn_remover)
@@ -1540,11 +1555,11 @@ class MundoBotsView(QWidget):
         layout.addWidget(table, 1)
 
         btn_fechar = QPushButton("Fechar")
-        btn_fechar.setStyleSheet("""
-            QPushButton { background: #21262d; border: 1px solid #30363d;
-                border-radius: 6px; color: #c9d1d9; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }
-            QPushButton:hover { background: #30363d; }
+        btn_fechar.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 20px;
+                font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
 
@@ -1559,6 +1574,11 @@ class MundoBotsView(QWidget):
         if idx >= len(self._hidden_clients_data):
             return
         r = self._hidden_clients_data[idx]
+        name = str(r[3]) if r[3] else "desconhecido"
+        if not show_confirm(self, "Remover Cliente Oculto",
+                           f"Tem certeza que deseja remover \"{name}\" dos clientes ocultos?\n\n"
+                           f"Ele voltara a aparecer na listagem e podera receber mensagens novamente."):
+            return
         key = (str(r[0]), str(r[2]))
 
         jobs = self._load_jobs()
@@ -1611,6 +1631,7 @@ class MundoBotsView(QWidget):
     # ================== TABLE ==================
 
     def _populate_table(self, rows: list, sent_status: dict):
+        t = theme_manager.current()
         try:
             self.table.setRowCount(0)
             self.table.blockSignals(True)
@@ -1643,16 +1664,26 @@ class MundoBotsView(QWidget):
                     remaining = sent_info.get("remaining_hours", 0)
 
                     env_item = QTableWidgetItem("Sim" if ja_enviado else "Não")
-                    env_item.setForeground(Qt.red if ja_enviado else Qt.green)
+                    env_item.setForeground(QColor(t.danger) if ja_enviado else QColor(t.success))
                     self.table.setItem(row, 7, env_item)
 
                     if ja_enviado and remaining > 0:
                         resto = f"{remaining:.0f}h restantes"
                         resto_item = QTableWidgetItem(resto)
-                        resto_item.setForeground(QColor("#d29922"))
+                        resto_item.setForeground(QColor(t.warning))
+                        for c in range(self.table.columnCount()):
+                            it = self.table.item(row, c)
+                            if it:
+                                parts = _hex_to_rgb(t.warning).split(",")
+                                it.setBackground(QColor(int(parts[0]), int(parts[1]), int(parts[2]), 20))
                     elif ja_enviado:
                         resto_item = QTableWidgetItem("Disponível")
-                        resto_item.setForeground(Qt.green)
+                        resto_item.setForeground(QColor(t.success))
+                        for c in range(self.table.columnCount()):
+                            it = self.table.item(row, c)
+                            if it:
+                                parts = _hex_to_rgb(t.success).split(",")
+                                it.setBackground(QColor(int(parts[0]), int(parts[1]), int(parts[2]), 20))
                     else:
                         resto_item = QTableWidgetItem("-")
                     self.table.setItem(row, 8, resto_item)
@@ -1666,7 +1697,7 @@ class MundoBotsView(QWidget):
             self.btn_filtrar.setEnabled(True)
             self.btn_filtrar.setText("Filtrar")
             self.lbl_loading.setText("Nenhum")
-            self.lbl_loading.setStyleSheet("font-size: 12px; color: #f85149; font-weight: 600;")
+            self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
             show_error(self, "Erro", f"Erro ao popular tabela:\n{e}")
 
     def _on_check_changed(self, item):

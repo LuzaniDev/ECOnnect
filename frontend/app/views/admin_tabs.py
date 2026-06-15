@@ -8,6 +8,7 @@ from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
 from frontend.app.api import user_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
 ALL_TAB_OPTIONS = [
@@ -33,20 +34,13 @@ class AdminTabsView(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Gerenciar Abas — Permissões por Usuário")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #c9d1d9;")
+        title.setStyleSheet("font-size: 22px; font-weight: 800;")
         header.addWidget(title)
         header.addStretch()
 
         btn_refresh = QPushButton("Atualizar")
         btn_refresh.setCursor(Qt.PointingHandCursor)
-        btn_refresh.setStyleSheet("""
-            QPushButton {
-                background: #21262d; border: 1px solid #30363d;
-                border-radius: 6px; color: #c9d1d9;
-                padding: 8px 16px; font-size: 12px; font-weight: 600;
-            }
-            QPushButton:hover { background: #30363d; }
-        """)
+        btn_refresh.setProperty("ghost", True)
         btn_refresh.clicked.connect(self.refresh)
         header.addWidget(btn_refresh)
         layout.addLayout(header)
@@ -56,7 +50,7 @@ class AdminTabsView(QWidget):
             "Administradores sempre veem todas as abas."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #8b949e; font-size: 12px; padding-bottom: 8px;")
+        desc.setStyleSheet("font-size: 12px; padding-bottom: 8px;")
         layout.addWidget(desc)
 
         self.table = QTableWidget()
@@ -72,32 +66,16 @@ class AdminTabsView(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(40)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; gridline-color: #21262d;
-                font-size: 12px;
-            }
-            QTableWidget::item { padding: 6px; }
-            QTableWidget::item:selected { background-color: rgba(31,111,235,0.15); }
-            QHeaderView::section {
-                background: #161b22; color: #8b949e;
-                border: 1px solid #30363d; padding: 8px;
-                font-weight: 600; font-size: 11px;
-            }
+        t = theme_manager.current()
+        self.table.setStyleSheet(f"""
+            QTableWidget::item {{ padding: 6px; }}
+            QTableWidget::item:selected {{ background-color: rgba({_hex_to_rgb(t.primary)},0.15); }}
         """)
         layout.addWidget(self.table, 1)
 
         btn_save = QPushButton("Salvar Permissões")
         btn_save.setCursor(Qt.PointingHandCursor)
-        btn_save.setStyleSheet("""
-            QPushButton {
-                background: #1f6feb; color: #fff; border: none;
-                border-radius: 6px; padding: 10px 24px;
-                font-size: 14px; font-weight: 700;
-            }
-            QPushButton:hover { background: #388bfd; }
-        """)
+        btn_save.setProperty("primary", True)
         btn_save.clicked.connect(self._salvar)
         layout.addWidget(btn_save)
 

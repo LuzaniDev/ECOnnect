@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 from frontend.app.core.eco_auth import login_completo, listar_empresas
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, ThemeType
 from frontend.app.widgets.dialogs import show_error
 
 
@@ -29,102 +30,13 @@ def _log_login(msg: str, level: str = "INFO") -> None:
         f.flush()
 
 
-LOGIN_STYLE = """
-QWidget#login_page {
+def _login_qss():
+    t = theme_manager.current()
+    return f"""
+QWidget#login_page {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #0d1117, stop:1 #161b22);
-}
-QWidget#login_card {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 16px;
-    min-width: 380px;
-    max-width: 400px;
-}
-QWidget#login_card:hover {
-    border-color: #1f6feb;
-}
-QLabel#login_title {
-    font-size: 26px;
-    font-weight: 800;
-    color: #c9d1d9;
-    letter-spacing: -0.3px;
-}
-QLabel#login_subtitle {
-    font-size: 12px;
-    color: #8b949e;
-}
-QLabel#field_label {
-    font-size: 10px;
-    color: #8b949e;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding-bottom: 2px;
-}
-QLineEdit {
-    background-color: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #c9d1d9;
-    min-height: 18px;
-}
-QLineEdit:focus {
-    border: 1px solid #1f6feb;
-    background-color: #0d1117;
-}
-QLineEdit::placeholder {
-    color: #484f58;
-}
-QComboBox {
-    background-color: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #c9d1d9;
-    min-height: 18px;
-}
-QComboBox:focus {
-    border: 1px solid #1f6feb;
-}
-QComboBox::drop-down {
-    border: none;
-    width: 36px;
-}
-QComboBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid #8b949e;
-    margin-right: 10px;
-}
-QComboBox QAbstractItemView {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    selection-background-color: #1f6feb;
-    color: #c9d1d9;
-    padding: 4px;
-}
-QPushButton#login_btn {
-    background-color: #1f6feb;
-    color: #ffffff;
-    border: none;
-    border-radius: 6px;
-    padding: 12px;
-    font-size: 14px;
-    font-weight: 700;
-    min-height: 20px;
-}
-QPushButton#login_btn:hover {
-    background-color: #388bfd;
-}
-QPushButton#login_btn:disabled {
-    background-color: #21262d;
-    color: #484f58;
-}
+        stop:0 {t.gradient_start}, stop:1 {t.gradient_end});
+}}
 """
 
 
@@ -134,7 +46,7 @@ class LoginView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("login_page")
-        self.setStyleSheet(LOGIN_STYLE)
+        self.setStyleSheet(_login_qss())
         self._build_ui()
         self._carregar_empresas()
 
@@ -165,7 +77,7 @@ class LoginView(QWidget):
             logo_label.setFixedSize(64, 64)
         else:
             logo_label.setText("EC")
-            logo_label.setStyleSheet("font-size: 42px; font-weight: 800; color: #d29922;")
+            logo_label.setStyleSheet("font-size: 42px; font-weight: 800;")
         logo_layout.addWidget(logo_label)
         card_layout.addLayout(logo_layout)
 
@@ -205,6 +117,28 @@ class LoginView(QWidget):
         self.cmb_empresa = QComboBox()
         self.cmb_empresa.setPlaceholderText("Selecione a empresa")
         card_layout.addWidget(self.cmb_empresa)
+
+        lbl_tema = QLabel("Tema")
+        lbl_tema.setObjectName("field_label")
+        card_layout.addWidget(lbl_tema)
+
+        self.theme_combo = QComboBox()
+        t = theme_manager.current()
+        self.theme_combo.setStyleSheet(
+            f"QComboBox {{ background: {t.bg}; border: 1px solid {t.border}; "
+            f"border-radius: 4px; padding: 6px 10px; color: {t.text}; font-size: 12px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background: {t.surface}; color: {t.text}; "
+            f"border: 1px solid {t.border}; }}"
+        )
+        self.theme_combo.addItem("🌙 Black (Escuro)", ThemeType.BLACK)
+        self.theme_combo.addItem("☀️ White (Claro)", ThemeType.WHITE)
+        self.theme_combo.addItem("💚 Matrix (Verde)", ThemeType.MATRIX)
+        idx = self.theme_combo.findData(theme_manager.current().type)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        card_layout.addWidget(self.theme_combo)
 
         card_layout.addSpacing(12)
 
@@ -249,6 +183,19 @@ class LoginView(QWidget):
             _log_login(f"Traceback: {traceback.format_exc()}", "ERROR")
             logger.error("LOGIN", "Erro ao carregar empresas", erro=str(e))
             self.cmb_empresa.addItem("Erro ao carregar empresas", "")
+
+    def _on_theme_changed(self, idx: int):
+        theme_type = self.theme_combo.itemData(idx)
+        theme_manager.set_theme(theme_type)
+        t = theme_manager.current()
+        self.setStyleSheet(_login_qss())
+        self.theme_combo.setStyleSheet(
+            f"QComboBox {{ background: {t.bg}; border: 1px solid {t.border}; "
+            f"border-radius: 4px; padding: 6px 10px; color: {t.text}; font-size: 12px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background: {t.surface}; color: {t.text}; "
+            f"border: 1px solid {t.border}; }}"
+        )
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):

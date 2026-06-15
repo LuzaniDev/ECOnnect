@@ -19,45 +19,38 @@ from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.api import user_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
 class UserEditDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
     def __init__(self, user_data: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Editar Usuário")
         self.setMinimumWidth(450)
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #0a1220;
-                color: #f1f5f9;
-            }
-            QLabel { color: #f1f5f9; }
-        """
-        )
+
 
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
 
         # Header
         header = QFrame()
-        header.setStyleSheet(
-            "QFrame { background-color: #141d32; border: 1px solid #1e2d4a; "
-            "border-radius: 8px; padding: 16px; }"
-        )
         header_layout = QHBoxLayout(header)
 
         avatar = QLabel(user_data.get("username", "U")[0].upper())
         avatar.setStyleSheet(
-            "font-size: 22px; font-weight: 800; color: #014998; "
-            "background-color: rgba(1, 73, 152, 0.15); "
-            "border-radius: 20px; padding: 6px 14px;"
+            f"font-size: 22px; font-weight: 800; color: {self._t.primary}; "
+            f"background-color: rgba({_hex_to_rgb(self._t.primary)}, 0.15); "
+            f"border-radius: 20px; padding: 6px 14px;"
         )
         header_layout.addWidget(avatar)
 
         info = QLabel(
-            f'<b style="color:#f1f5f9;">{user_data.get("username", "")}</b><br>'
-            f'<span style="color:#64748b;">{user_data.get("email", "")}</span>'
+            f'<b style="color:{self._t.text};">{user_data.get("username", "")}</b><br>'
+            f'<span style="color:{self._t.text_secondary};">{user_data.get("email", "")}</span>'
         )
         info.setTextFormat(Qt.RichText)
         header_layout.addWidget(info)
@@ -117,7 +110,7 @@ class AdminUsersView(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Gerenciar Usuários")
-        title.setStyleSheet("font-size: 24px; font-weight: 700; color: #f1f5f9; ")
+        title.setStyleSheet("font-size: 24px; font-weight: 700;")
         header.addWidget(title)
         header.addStretch()
 
@@ -128,7 +121,6 @@ class AdminUsersView(QWidget):
 
         self.btn_delete = QPushButton("Excluir")
         self.btn_delete.setProperty("danger", True)
-        self.btn_delete.setStyleSheet("QPushButton[danger=true] { }")
         self.btn_delete.setVisible(False)
         self.btn_delete.clicked.connect(self._delete_selected)
         header.addWidget(self.btn_delete)

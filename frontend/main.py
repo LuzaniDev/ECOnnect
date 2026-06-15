@@ -164,12 +164,13 @@ def main():
         logger.info("Servidor backend pronto!")
         app = _create_app_instance()
 
-        from frontend.app.styles.theme import apply_theme
-        apply_theme(app)
+        from frontend.app.core.theme import apply_palette, theme_manager, _set_titlebar_theme
+        apply_palette(theme_manager.current())
 
         from frontend.app.app import MainWindow
         window = MainWindow()
         window.show()
+        _set_titlebar_theme(int(window.winId()), theme_manager.current().titlebar_dark)
         window.raise_()
         window.activateWindow()
         logger.info("Janela principal exibida")

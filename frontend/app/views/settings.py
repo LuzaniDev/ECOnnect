@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget,
@@ -15,16 +16,20 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QFileDialog,
+    QComboBox,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from frontend.app.api.client import client
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
 from frontend.app.core.logger import logger
 from frontend.app.core.firebird_client import fb
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 TAG_COOLDOWN_FILE = os.path.join(os.path.expanduser("~"), ".econnect", "tag_cooldown_config.json")
 TEMPLATES_FILE = os.path.join(os.path.expanduser("~"), ".econnect", "mundo_bots_templates.json")
+AVATAR_DIR = os.path.join(os.path.expanduser("~"), ".econnect", "avatars")
 
 
 class UserSettingsView(QWidget):
@@ -45,29 +50,28 @@ class UserSettingsView(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
+        t = theme_manager.current()
         title = QLabel("Configuracoes")
-        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #c9d1d9;")
+        title.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {t.text};")
         layout.addWidget(title)
 
         user_info = QFrame()
-        user_info.setStyleSheet(
-            "QFrame { background-color: #161b22; border: 1px solid #30363d; "
-            "border-radius: 8px; padding: 14px 18px; }"
-        )
+        user_info.setObjectName("card")
         user_layout = QHBoxLayout(user_info)
         user_layout.setSpacing(14)
 
-        avatar = QLabel(self.user.get("username", "U")[0].upper())
-        avatar.setStyleSheet(
-            "font-size: 20px; font-weight: 800; color: #d29922; "
-            "background-color: rgba(210, 153, 34, 0.12); "
-            "border-radius: 20px; padding: 6px 12px; min-width: 20px;"
-        )
+        avatar = QLabel()
+        avatar.setFixedSize(40, 40)
+        avatar.setAlignment(Qt.AlignCenter)
+        avatar.setCursor(Qt.PointingHandCursor)
+        self._load_avatar(avatar)
+        avatar.mousePressEvent = lambda e: self._pick_avatar(avatar)
         user_layout.addWidget(avatar)
 
+        t = theme_manager.current()
         info_text = QLabel(
-            f'<b style="color:#c9d1d9;">{self.user.get("username", "")}</b><br>'
-            f'<span style="color:#8b949e;">{self.user.get("role", "").capitalize()} &bull; '
+            f'<b style="color:{t.text};">{self.user.get("username", "")}</b><br>'
+            f'<span style="color:{t.text_secondary};">{self.user.get("role", "").capitalize()} &bull; '
             f'{self.user.get("email", "")}</span>'
         )
         info_text.setTextFormat(Qt.RichText)
@@ -76,24 +80,25 @@ class UserSettingsView(QWidget):
 
         layout.addWidget(user_info)
 
-        CARD_STYLE = """
-            QFrame#settingsCard {
-                background-color: #161b22;
-                border: 1px solid #30363d;
+        t = theme_manager.current()
+        CARD_STYLE = f"""
+            QFrame#settingsCard {{
+                background-color: {t.surface};
+                border: 1px solid {t.border};
                 border-radius: 8px;
                 padding: 24px;
-            }
-            QLabel#sectionTitle {
+            }}
+            QLabel#sectionTitle {{
                 font-size: 14px;
                 font-weight: 700;
-                color: #c9d1d9;
+                color: {t.text};
                 padding-bottom: 2px;
-            }
-            QLabel#sectionDesc {
+            }}
+            QLabel#sectionDesc {{
                 font-size: 12px;
-                color: #8b949e;
+                color: {t.text_secondary};
                 padding-bottom: 14px;
-            }
+            }}
         """
 
         # --- Firebird config card ---
@@ -117,7 +122,7 @@ class UserSettingsView(QWidget):
 
         fb_divider = QFrame()
         fb_divider.setStyleSheet(
-            "QFrame { max-height: 1px; min-height: 1px; background-color: #30363d; border: none; }"
+            f"max-height: 1px; min-height: 1px; background-color: {t.border}; border: none;"
         )
         fb_card_layout.addWidget(fb_divider)
 
@@ -147,11 +152,27 @@ class UserSettingsView(QWidget):
         fb_card_layout.addLayout(fb_form)
 
         fb_card_layout.addSpacing(6)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        btn_test_fb = QPushButton("Testar Conexao")
+        btn_test_fb.setCursor(Qt.PointingHandCursor)
+        btn_test_fb.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 18px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+        """)
+        btn_test_fb.clicked.connect(self._test_fb_connection)
+        btn_row.addWidget(btn_test_fb)
+
         btn_save_fb = QPushButton("Salvar Configuracao Firebird")
         btn_save_fb.setProperty("accent", True)
         btn_save_fb.setCursor(Qt.PointingHandCursor)
         btn_save_fb.clicked.connect(self._save_fb)
-        fb_card_layout.addWidget(btn_save_fb)
+        btn_row.addWidget(btn_save_fb)
+
+        fb_card_layout.addLayout(btn_row)
 
         fb_card_layout.addStretch()
         layout.addWidget(fb_card)
@@ -178,38 +199,40 @@ class UserSettingsView(QWidget):
         tag_card_layout.addWidget(tag_desc)
 
         tag_divider = QFrame()
-        tag_divider.setStyleSheet("QFrame { max-height: 1px; min-height: 1px; background-color: #30363d; border: none; }")
+        tag_divider.setStyleSheet(f"max-height: 1px; min-height: 1px; background-color: {t.border}; border: none;")
         tag_card_layout.addWidget(tag_divider)
 
         self.tag_table = QTableWidget()
-        self.tag_table.setColumnCount(2)
-        self.tag_table.setHorizontalHeaderLabels(["TAG", "BLOQUEIO (HORAS)"])
+        self.tag_table.setColumnCount(3)
+        self.tag_table.setHorizontalHeaderLabels(["", "TAG", "BLOQUEIO (HORAS)"])
         self.tag_table.horizontalHeader().setStretchLastSection(True)
-        self.tag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.tag_table.horizontalHeader().resizeSection(0, 52)
+        self.tag_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tag_table.setSelectionMode(QTableWidget.NoSelection)
         self.tag_table.setShowGrid(False)
         self.tag_table.setMinimumHeight(80)
         self.tag_table.verticalHeader().setDefaultSectionSize(28)
         self.tag_table.verticalHeader().setVisible(False)
-        self.tag_table.setStyleSheet("""
-            QTableWidget {
+        self.tag_table.setStyleSheet(f"""
+            QTableWidget {{
                 background: transparent;
                 border: none;
                 font-size: 12px;
-                color: #c9d1d9;
-            }
-            QTableWidget::item {
+                color: {t.text};
+            }}
+            QTableWidget::item {{
                 padding: 2px 4px;
-                border-bottom: 1px solid #21262d;
-            }
-            QHeaderView::section {
+                border-bottom: 1px solid {t.border};
+            }}
+            QHeaderView::section {{
                 background: transparent;
-                color: #8b949e;
+                color: {t.text_secondary};
                 font-size: 10px;
                 font-weight: 700;
                 border: none;
                 padding: 2px 0;
-            }
+            }}
         """)
         tag_card_layout.addWidget(self.tag_table)
 
@@ -221,6 +244,8 @@ class UserSettingsView(QWidget):
         tag_card_layout.addWidget(btn_save_tags)
 
         layout.addWidget(tag_card)
+
+        # Theme selector was removed — now on login screen
         layout.addStretch()
 
         scroll.setWidget(container)
@@ -243,9 +268,13 @@ class UserSettingsView(QWidget):
                         tags.add(tag)
         except Exception:
             pass
-        return sorted(tags)
+        config = self._load_tag_cooldown_config()
+        ordered = [t for t in config if t in tags]
+        remaining = sorted(t for t in tags if t not in ordered)
+        return ordered + remaining
 
     def _load_tag_cooldown_table(self):
+        t = theme_manager.current()
         self.tag_table.setRowCount(0)
         config = self._load_tag_cooldown_config()
         all_tags = self._get_all_template_tags()
@@ -256,10 +285,13 @@ class UserSettingsView(QWidget):
                 row = self.tag_table.rowCount()
                 self.tag_table.insertRow(row)
 
+                btn_widget = self._create_order_buttons(row, tag)
+                self.tag_table.setCellWidget(row, 0, btn_widget)
+
                 item = QTableWidgetItem(tag)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                item.setForeground(QColor("#c9d1d9"))
-                self.tag_table.setItem(row, 0, item)
+                item.setForeground(QColor(t.text))
+                self.tag_table.setItem(row, 1, item)
 
                 val = config.get(tag, 0)
                 spin = QSpinBox()
@@ -268,22 +300,22 @@ class UserSettingsView(QWidget):
                 spin.setSuffix(" horas")
                 spin.setFixedHeight(22)
                 spin.setMinimumWidth(80)
-                spin.setStyleSheet("""
-                    QSpinBox { background: #0d1117; border: 1px solid #30363d;
-                        border-radius: 3px; padding: 0px 2px; color: #c9d1d9;
-                        font-size: 11px; }
+                spin.setStyleSheet(f"""
+                    QSpinBox {{ background: {t.bg}; border: 1px solid {t.border};
+                        border-radius: 3px; padding: 0px 2px; color: {t.text};
+                        font-size: 11px; }}
                 """)
-                self.tag_table.setCellWidget(row, 1, spin)
+                self.tag_table.setCellWidget(row, 2, spin)
                 self._tag_spins[tag] = spin
 
             self.tag_table.setVisible(True)
         else:
             self.tag_table.setRowCount(1)
-            self.tag_table.setSpan(0, 0, 1, 2)
+            self.tag_table.setSpan(0, 0, 1, 3)
             item = QTableWidgetItem("Nenhuma tag encontrada. Crie templates com tags primeiro.")
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-            item.setForeground(QColor("#8b949e"))
-            self.tag_table.setItem(0, 0, item)
+            item.setForeground(QColor(t.text_secondary))
+            self.tag_table.setItem(0, 1, item)
 
     def _load_tag_cooldown_config(self) -> dict:
         try:
@@ -349,6 +381,28 @@ class UserSettingsView(QWidget):
             data,
         )
 
+    def _test_fb_connection(self):
+        database = self.fb_database.text().strip()
+        user = self.fb_user.text().strip()
+        password = self.fb_password.text().strip()
+        if not database:
+            show_error(self, "Erro", "Preencha o caminho do banco Firebird primeiro.")
+            return
+
+        def _do_test():
+            import fdb
+            conn = fdb.connect(dsn=database, user=user, password=password, charset="WIN1252")
+            conn.close()
+            return True
+
+        def _on_success(_):
+            show_success(self, "OK", "Conexao Firebird bem-sucedida!")
+
+        def _on_error(e):
+            show_error(self, "Falha na Conexao", f"Nao foi possivel conectar ao Firebird:\n{e}")
+
+        run_in_thread(_do_test, _on_success, _on_error)
+
     def _do_save_fb(self, company_code: str, data: dict):
         from frontend.app.api.company_config_api import update_company_config
         result = update_company_config(company_code, data)
@@ -358,6 +412,89 @@ class UserSettingsView(QWidget):
             password=result["fb_password"],
         )
         return result
+
+    def _avatar_path(self) -> str:
+        uname = self.user.get("username", "user")
+        os.makedirs(AVATAR_DIR, exist_ok=True)
+        return os.path.join(AVATAR_DIR, f"{uname}.png")
+
+    def _load_avatar(self, label: QLabel):
+        path = self._avatar_path()
+        if os.path.exists(path):
+            pix = QPixmap(path)
+            if not pix.isNull():
+                label.setPixmap(pix.scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                label.setStyleSheet("border-radius: 18px; background: transparent;")
+                return
+        t = theme_manager.current()
+        initial = self.user.get("username", "U")[0].upper()
+        label.setText(initial)
+        label.setStyleSheet(
+            f"font-size: 20px; font-weight: 800; color: {t.warning}; "
+            f"background-color: rgba({_hex_to_rgb(t.warning)}, 0.12); "
+            f"border-radius: 20px;"
+        )
+
+    def _pick_avatar(self, label: QLabel):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar Foto de Perfil", "",
+            "Imagens (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if not path:
+            return
+        try:
+            dest = self._avatar_path()
+            os.makedirs(AVATAR_DIR, exist_ok=True)
+            shutil.copy2(path, dest)
+            self._load_avatar(label)
+        except Exception as e:
+            show_error(self, "Erro", f"Nao foi possivel carregar a imagem:\n{e}")
+
+    def _create_order_buttons(self, row: int, tag: str) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        t = theme_manager.current()
+        btn_up = QPushButton("▲")
+        btn_up.setFixedSize(22, 22)
+        btn_up.setStyleSheet(
+            f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; "
+            f"border-radius: 3px; color: {t.text_secondary}; font-size: 10px; }} "
+            f"QPushButton:hover {{ background: {t.border}; color: {t.text}; }}"
+        )
+        btn_up.clicked.connect(lambda checked, r=row, tname=tag: self._move_tag(r, tname, -1))
+
+        btn_down = QPushButton("▼")
+        btn_down.setFixedSize(22, 22)
+        btn_down.setStyleSheet(
+            f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; "
+            f"border-radius: 3px; color: {t.text_secondary}; font-size: 10px; }} "
+            f"QPushButton:hover {{ background: {t.border}; color: {t.text}; }}"
+        )
+        btn_down.clicked.connect(lambda checked, r=row, t=tag: self._move_tag(r, t, 1))
+
+        layout.addWidget(btn_up)
+        layout.addWidget(btn_down)
+        layout.addStretch()
+        return container
+
+    def _move_tag(self, row: int, tag: str, direction: int):
+        new_row = row + direction
+        if new_row < 0 or new_row >= self.tag_table.rowCount():
+            return
+        # Swap rows by rebuilding the table
+        config = self._load_tag_cooldown_config()
+        all_tags = self._get_all_template_tags()
+        idx = all_tags.index(tag)
+        all_tags[idx], all_tags[new_row] = all_tags[new_row], all_tags[idx]
+        # Persist new order
+        ordered_config = {}
+        for t in all_tags:
+            ordered_config[t] = config.get(t, 0)
+        self._save_tag_cooldown_config(ordered_config)
+        self._load_tag_cooldown_table()
 
     def refresh(self):
         from frontend.app.api.user_api import list_users

@@ -16,6 +16,7 @@ from frontend.app.widgets.autocomplete_textedit import AutoCompleteTextEdit
 from frontend.app.widgets.sql_variable_dialogs import VariablePickerDialog, SqlVariableManagerDialog
 from frontend.app.api import integration_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
 SCHEDULE_PRESETS = {
@@ -80,6 +81,10 @@ def _substitute_variables(data, values: dict[str, str]):
 
 
 class TriggerVariablesDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
     def __init__(self, variables: list[str], parent=None, sql_variables: list[dict] = None, user: dict = None):
         super().__init__(parent)
         self._vars = variables
@@ -88,28 +93,30 @@ class TriggerVariablesDialog(QDialog):
         self._sql_col_map = {v["name"]: v.get("value_column") for v in self._sql_variables}
         self.setWindowTitle("Preencher Variaveis")
         self.setMinimumWidth(480)
-        self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QLineEdit {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 6px;
-            }
-            QComboBox {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 6px;
-            }
-            QComboBox::drop-down { border: none; width: 24px; }
-            QComboBox::down-arrow {
+        t = self._t
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+            QLabel {{ color: {t.text}; }}
+            QLineEdit {{
+                background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 4px; padding: 6px;
+            }}
+            QComboBox {{
+                background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 4px; padding: 6px;
+            }}
+            QComboBox::drop-down {{ border: none; width: 24px; }}
+            QComboBox::down-arrow {{
                 border-left: 4px solid transparent;
                 border-right: 4px solid transparent;
-                border-top: 5px solid #8b949e; margin-right: 4px;
-            }
+                border-top: 5px solid {t.text_secondary}; margin-right: 4px;
+            }}
         """)
         self._inputs = {}
         self._build()
 
     def _build(self):
+        t = self._t
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -118,7 +125,7 @@ class TriggerVariablesDialog(QDialog):
         layout.addWidget(title)
         desc = QLabel("As variaveis abaixo foram encontradas na requisicao. Preencha os valores.")
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #8b949e; font-size: 12px;")
+        desc.setStyleSheet(f"color: {t.text_secondary}; font-size: 12px;")
         layout.addWidget(desc)
         form = QFormLayout()
         form.setSpacing(10)
@@ -148,7 +155,7 @@ class TriggerVariablesDialog(QDialog):
                     pass
                 combo.setStyleSheet("font-size: 12px;")
                 lbl = QLabel(f"  {{${var}}}")
-                lbl.setStyleSheet("font-size: 13px; color: #58a6ff; font-weight: 600;")
+                lbl.setStyleSheet(f"font-size: 13px; color: {t.accent_blue}; font-weight: 600;")
                 form.addRow(lbl, combo)
                 self._inputs[var] = combo
             else:
@@ -156,7 +163,7 @@ class TriggerVariablesDialog(QDialog):
                 inp.setPlaceholderText(f"Valor para {var}")
                 inp.setStyleSheet("font-size: 12px;")
                 lbl = QLabel(f"  {{${var}}}")
-                lbl.setStyleSheet("font-size: 13px; color: #58a6ff; font-weight: 600;")
+                lbl.setStyleSheet(f"font-size: 13px; color: {t.accent_blue}; font-weight: 600;")
                 form.addRow(lbl, inp)
                 self._inputs[var] = inp
         layout.addLayout(form)
@@ -177,6 +184,10 @@ class TriggerVariablesDialog(QDialog):
 
 
 class InterfaceEditorDialog(QDialog):
+    @property
+    def _t(self):
+        return theme_manager.current()
+
     def __init__(self, parent=None, data: dict = None, is_active: bool = True, user: dict = None, sql_variables: list[dict] = None, integration_type: str = "normal"):
         super().__init__(parent)
         self._user = user or {}
@@ -184,19 +195,21 @@ class InterfaceEditorDialog(QDialog):
         self._integration_type = integration_type
         self.setWindowTitle("Editor de Requisicao")
         self.setMinimumSize(640, 560)
-        self.setStyleSheet("""
-            QDialog { background-color: #0d1117; color: #c9d1d9; }
-            QLabel { color: #c9d1d9; }
-            QTextEdit, QLineEdit, QComboBox {
-                background-color: #0d1117; color: #c9d1d9;
-                border: 1px solid #30363d; border-radius: 4px; padding: 6px;
-            }
+        t = self._t
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+            QLabel {{ color: {t.text}; }}
+            QTextEdit, QLineEdit, QComboBox {{
+                background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 4px; padding: 6px;
+            }}
         """)
         self._data = data or {}
         self._is_active = is_active
         self._build()
 
     def _build(self):
+        t = self._t
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -208,28 +221,28 @@ class InterfaceEditorDialog(QDialog):
             "para criar parametros que serao preenchidos na hora da execucao."
         )
         var_hint.setWordWrap(True)
-        var_hint.setStyleSheet("color: #d29922; font-size: 11px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 6px;")
+        var_hint.setStyleSheet(f"color: {t.warning}; font-size: 11px; background: {t.surface}; border: 1px solid {t.border}; border-radius: 4px; padding: 6px;")
         layout.addWidget(var_hint)
         btn_vars = QPushButton("Inserir Variavel do Banco")
         btn_vars.setCursor(Qt.PointingHandCursor)
-        btn_vars.setStyleSheet("background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #58a6ff; padding: 6px 14px; font-size: 12px;")
+        btn_vars.setStyleSheet(f"background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.accent_blue}; padding: 6px 14px; font-size: 12px;")
         btn_vars.clicked.connect(self._insert_variable)
         layout.addWidget(btn_vars, alignment=Qt.AlignLeft)
         btn_import = QPushButton("Importar cURL")
         btn_import.setCursor(Qt.PointingHandCursor)
-        btn_import.setStyleSheet("background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; padding: 6px 14px; font-size: 12px;")
+        btn_import.setStyleSheet(f"background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.text}; padding: 6px 14px; font-size: 12px;")
         btn_import.clicked.connect(self._import_curl)
         layout.addWidget(btn_import, alignment=Qt.AlignLeft)
         row1 = QHBoxLayout()
         lbl = QLabel("Metodo:")
-        lbl.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 600;")
+        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600;")
         row1.addWidget(lbl)
         self.method_combo = QComboBox()
         self.method_combo.addItems(["POST", "GET", "PUT", "DELETE", "PATCH"])
         self.method_combo.setCurrentText(self._data.get("method", "POST"))
         row1.addWidget(self.method_combo)
         lbl = QLabel("URL:")
-        lbl.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 600;")
+        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600;")
         row1.addWidget(lbl)
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("https://exemplo.com/api/endpoint")
@@ -237,7 +250,7 @@ class InterfaceEditorDialog(QDialog):
         row1.addWidget(self.url_input, 1)
         layout.addLayout(row1)
         lbl = QLabel("Headers (um por linha: Chave: Valor)")
-        lbl.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 600; margin-top: 4px;")
+        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600; margin-top: 4px;")
         layout.addWidget(lbl)
         self.headers_input = AutoCompleteTextEdit(self._user, self._sql_variables)
         self.headers_input.setPlaceholderText("Content-Type: application/json\naccept: application/json\nX-ACCESS-TOKEN: seu_token")
@@ -247,7 +260,7 @@ class InterfaceEditorDialog(QDialog):
         self.headers_input.setPlainText(headers_str)
         layout.addWidget(self.headers_input)
         lbl = QLabel("Body (JSON)")
-        lbl.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 600; margin-top: 4px;")
+        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600; margin-top: 4px;")
         layout.addWidget(lbl)
         self.body_input = AutoCompleteTextEdit(self._user, self._sql_variables)
         self.body_input.setPlaceholderText('{\n  "phone": "5511999999999",\n  "first_name": "{{nome}}"\n}')
@@ -259,19 +272,19 @@ class InterfaceEditorDialog(QDialog):
         layout.addSpacing(8)
         type_row = QHBoxLayout()
         type_label = QLabel("Tipo:")
-        type_label.setStyleSheet("font-size: 12px; color: #8b949e; font-weight: 600;")
+        type_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         type_row.addWidget(type_label)
         self.edit_type = QComboBox()
         self.edit_type.addItems(["Normal", "Cobranca"])
         if self._integration_type == "cobranca":
             self.edit_type.setCurrentText("Cobranca")
-        self.edit_type.setStyleSheet("QComboBox { background-color: #0d1117; border: 1px solid #30363d; border-radius: 4px; padding: 6px; font-size: 12px; color: #c9d1d9; min-width: 120px; } QComboBox::drop-down { border: none; width: 24px; } QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #8b949e; margin-right: 4px; }")
+        self.edit_type.setStyleSheet(f"QComboBox {{ background-color: {t.bg}; border: 1px solid {t.border}; border-radius: 4px; padding: 6px; font-size: 12px; color: {t.text}; min-width: 120px; }} QComboBox::drop-down {{ border: none; width: 24px; }} QComboBox::down-arrow {{ border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {t.text_secondary}; margin-right: 4px; }}")
         type_row.addWidget(self.edit_type)
         type_row.addStretch()
         layout.addLayout(type_row)
         self.active_check = QCheckBox("Integracao ativa")
         self.active_check.setChecked(self._is_active)
-        self.active_check.setStyleSheet("font-size: 12px; color: #c9d1d9;")
+        self.active_check.setStyleSheet(f"font-size: 12px; color: {t.text};")
         layout.addWidget(self.active_check)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._validate)
@@ -369,6 +382,7 @@ class ScheduleWidget(QFrame):
         self._setup()
 
     def _setup(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -381,7 +395,7 @@ class ScheduleWidget(QFrame):
         opt.setSpacing(8)
         row1 = QHBoxLayout()
         lbl = QLabel("Repetir:")
-        lbl.setStyleSheet("font-size: 12px; color: #8b949e;")
+        lbl.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         row1.addWidget(lbl)
         self.preset_combo = QComboBox()
         for key, label in SCHEDULE_PRESETS.items():
@@ -395,7 +409,7 @@ class ScheduleWidget(QFrame):
         days_layout.setContentsMargins(0, 0, 0, 0)
         days_layout.setSpacing(4)
         lbl = QLabel("Dias:")
-        lbl.setStyleSheet("font-size: 12px; color: #8b949e;")
+        lbl.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         days_layout.addWidget(lbl)
         self.day_checks = {}
         for d in WEEKDAYS:
@@ -407,7 +421,7 @@ class ScheduleWidget(QFrame):
         opt.addWidget(self.days_frame)
         row2 = QHBoxLayout()
         lbl2 = QLabel("Horario:")
-        lbl2.setStyleSheet("font-size: 12px; color: #8b949e;")
+        lbl2.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         row2.addWidget(lbl2)
         self.time_edit = QTimeEdit()
         self.time_edit.setDisplayFormat("HH:mm")
@@ -416,7 +430,7 @@ class ScheduleWidget(QFrame):
         row2.addStretch()
         opt.addLayout(row2)
         self.next_run_label = QLabel()
-        self.next_run_label.setStyleSheet("font-size: 11px; color: #d29922; padding: 4px 0;")
+        self.next_run_label.setStyleSheet(f"font-size: 11px; color: {t.warning}; padding: 4px 0;")
         opt.addWidget(self.next_run_label)
         self.options_frame.setVisible(False)
         layout.addWidget(self.options_frame)
@@ -471,18 +485,19 @@ class RequisicoesView(QWidget):
         self._load_sql_variables()
 
     def _setup_ui(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { background: #0d1117; border: none; }
-            QTabBar::tab {
-                background: transparent; color: #8b949e; border: none;
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ background: {t.bg}; border: none; }}
+            QTabBar::tab {{
+                background: transparent; color: {t.text_secondary}; border: none;
                 padding: 10px 24px; font-size: 13px; font-weight: 500;
                 border-bottom: 2px solid transparent;
-            }
-            QTabBar::tab:selected { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
-            QTabBar::tab:hover { color: #c9d1d9; }
+            }}
+            QTabBar::tab:selected {{ color: {t.accent_blue}; border-bottom: 2px solid {t.accent_blue}; }}
+            QTabBar::tab:hover {{ color: {t.text}; }}
         """)
         self.tab_list = QWidget()
         self._build_tab_list()
@@ -495,12 +510,13 @@ class RequisicoesView(QWidget):
         layout.addWidget(self.tabs)
 
     def _build_tab_list(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self.tab_list)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         header = QHBoxLayout()
         title = QLabel("Requisições")
-        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #c9d1d9;")
+        title.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {t.text};")
         header.addWidget(title)
         header.addStretch()
         self.btn_refresh = QPushButton("Atualizar")
@@ -510,7 +526,7 @@ class RequisicoesView(QWidget):
         layout.addLayout(header)
         desc = QLabel("Gerencie as requisicoes HTTP cadastradas para envio de mensagens.")
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #8b949e; font-size: 12px;")
+        desc.setStyleSheet(f"color: {t.text_secondary}; font-size: 12px;")
         layout.addWidget(desc)
         role = self.user.get("role", "")
         self._is_admin = (role == "admin")
@@ -536,6 +552,7 @@ class RequisicoesView(QWidget):
         layout.addWidget(self.table)
 
     def _build_tab_create(self):
+        t = theme_manager.current()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -544,111 +561,111 @@ class RequisicoesView(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
         header_frame = QFrame()
-        header_frame.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1f6feb, stop:1 #0d1117); border-radius: 8px; padding: 20px;")
+        header_frame.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {t.primary}, stop:1 {t.bg}); border-radius: 8px; padding: 20px;")
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(20, 16, 20, 16)
         header_layout.setSpacing(4)
         title = QLabel("Nova Requisição")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #fff;")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {t.selection_text};")
         header_layout.addWidget(title)
         subtitle = QLabel("Configure uma requisicao HTTP para enviar mensagens atraves de provedores de API.")
-        subtitle.setStyleSheet("font-size: 12px; color: rgba(255,255,255,0.7);")
+        subtitle.setStyleSheet(f"font-size: 12px; color: rgba({_hex_to_rgb(t.selection_text)},0.7);")
         subtitle.setWordWrap(True)
         header_layout.addWidget(subtitle)
         layout.addWidget(header_frame)
         main_card = QFrame()
-        main_card.setStyleSheet("QFrame { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }")
+        main_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}")
         main_layout = QVBoxLayout(main_card)
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(16)
         section_conf = QFrame()
-        section_conf.setStyleSheet("QFrame { background-color: #0d1117; border: 1px solid #21262d; border-radius: 6px; }")
+        section_conf.setStyleSheet(f"QFrame {{ background-color: {t.bg}; border: 1px solid {t.surface_elevated}; border-radius: 6px; }}")
         conf_layout = QVBoxLayout(section_conf)
         conf_layout.setContentsMargins(16, 14, 16, 14)
         conf_layout.setSpacing(10)
         conf_title = QLabel("Configuracao")
-        conf_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
+        conf_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
         conf_layout.addWidget(conf_title)
         self.create_name = QLineEdit()
         self.create_name.setPlaceholderText("Ex: Cobranca pos-compra")
-        self.create_name.setStyleSheet("background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; font-size: 13px; color: #c9d1d9; min-height: 18px;")
+        self.create_name.setStyleSheet(f"background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 10px 14px; font-size: 13px; color: {t.text}; min-height: 18px;")
         conf_layout.addWidget(self.create_name)
         type_row = QHBoxLayout()
         type_label = QLabel("Tipo:")
-        type_label.setStyleSheet("font-size: 12px; color: #8b949e; font-weight: 600;")
+        type_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         type_row.addWidget(type_label)
         self.create_type = QComboBox()
         self.create_type.addItems(["Normal", "Cobranca"])
-        self.create_type.setStyleSheet("QComboBox { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #c9d1d9; min-height: 18px; min-width: 120px; } QComboBox::drop-down { border: none; width: 28px; } QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #8b949e; margin-right: 6px; }")
+        self.create_type.setStyleSheet(f"QComboBox {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: {t.text}; min-height: 18px; min-width: 120px; }} QComboBox::drop-down {{ border: none; width: 28px; }} QComboBox::down-arrow {{ border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {t.text_secondary}; margin-right: 6px; }}")
         type_row.addWidget(self.create_type)
         type_row.addStretch()
         conf_layout.addLayout(type_row)
         main_layout.addWidget(section_conf)
         section_req = QFrame()
-        section_req.setStyleSheet("QFrame { background-color: #0d1117; border: 1px solid #21262d; border-radius: 6px; }")
+        section_req.setStyleSheet(f"QFrame {{ background-color: {t.bg}; border: 1px solid {t.surface_elevated}; border-radius: 6px; }}")
         req_layout = QVBoxLayout(section_req)
         req_layout.setContentsMargins(16, 14, 16, 14)
         req_layout.setSpacing(10)
         req_title = QLabel("Requisicao HTTP")
-        req_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
+        req_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
         req_layout.addWidget(req_title)
         var_hint = QLabel("Use {{nome}}, {{telefone}} no body ou headers. Clique em \"Inserir Variavel\" para ver as variaveis disponiveis do banco.")
         var_hint.setWordWrap(True)
-        var_hint.setStyleSheet("color: #58a6ff; font-size: 11px; background: #0d1117; border-left: 3px solid #1f6feb; border-radius: 0; padding: 8px 12px;")
+        var_hint.setStyleSheet(f"color: {t.accent_blue}; font-size: 11px; background: {t.bg}; border-left: 3px solid {t.primary}; border-radius: 0; padding: 8px 12px;")
         req_layout.addWidget(var_hint)
         url_row = QHBoxLayout()
         self.create_method = QComboBox()
         self.create_method.addItems(["POST", "GET", "PUT", "DELETE", "PATCH"])
         self.create_method.setCurrentText("POST")
-        self.create_method.setStyleSheet("QComboBox { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #c9d1d9; min-height: 18px; min-width: 90px; } QComboBox::drop-down { border: none; width: 28px; } QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #8b949e; margin-right: 6px; }")
+        self.create_method.setStyleSheet(f"QComboBox {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: {t.text}; min-height: 18px; min-width: 90px; }} QComboBox::drop-down {{ border: none; width: 28px; }} QComboBox::down-arrow {{ border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid {t.text_secondary}; margin-right: 6px; }}")
         url_row.addWidget(self.create_method)
         self.create_url = QLineEdit()
         self.create_url.setPlaceholderText("https://exemplo.com/api/endpoint")
         self.create_url.setText("https://app.mundodosbots.com.br/api/users")
-        self.create_url.setStyleSheet("background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px 14px; font-size: 13px; color: #c9d1d9; min-height: 18px;")
+        self.create_url.setStyleSheet(f"background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 8px 14px; font-size: 13px; color: {t.text}; min-height: 18px;")
         url_row.addWidget(self.create_url, 1)
         btn_vars = QPushButton("Inserir Variavel")
         btn_vars.setCursor(Qt.PointingHandCursor)
-        btn_vars.setStyleSheet("QPushButton { background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #58a6ff; padding: 8px 14px; font-size: 12px; font-weight: 600; } QPushButton:hover { background: #30363d; }")
+        btn_vars.setStyleSheet(f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; color: {t.accent_blue}; padding: 8px 14px; font-size: 12px; font-weight: 600; }} QPushButton:hover {{ background: {t.border}; }}")
         btn_vars.clicked.connect(self._insert_create_var)
         url_row.addWidget(btn_vars)
         btn_mgr = QPushButton("Gerenciar")
         btn_mgr.setCursor(Qt.PointingHandCursor)
-        btn_mgr.setStyleSheet("QPushButton { background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; padding: 8px 14px; font-size: 12px; font-weight: 600; } QPushButton:hover { background: #30363d; }")
+        btn_mgr.setStyleSheet(f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; color: {t.text}; padding: 8px 14px; font-size: 12px; font-weight: 600; }} QPushButton:hover {{ background: {t.border}; }}")
         btn_mgr.clicked.connect(self._open_var_manager)
         url_row.addWidget(btn_mgr)
         req_layout.addLayout(url_row)
         headers_label = QLabel("HEADERS")
-        headers_label.setStyleSheet("font-size: 10px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px;")
+        headers_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px;")
         req_layout.addWidget(headers_label)
         self.create_headers = AutoCompleteTextEdit(self.user, self._sql_variables)
         self.create_headers.setPlaceholderText("Content-Type: application/json\naccept: application/json\nX-ACCESS-TOKEN: seu_token")
         self.create_headers.setMaximumHeight(90)
-        self.create_headers.setStyleSheet("QTextEdit { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-size: 12px; color: #c9d1d9; font-family: Consolas; } QTextEdit:focus { border: 1px solid #1f6feb; }")
+        self.create_headers.setStyleSheet(f"QTextEdit {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 10px; font-size: 12px; color: {t.text}; font-family: Consolas; }} QTextEdit:focus {{ border: 1px solid {t.primary}; }}")
         req_layout.addWidget(self.create_headers)
         body_label = QLabel("BODY (JSON)")
-        body_label.setStyleSheet("font-size: 10px; color: #8b949e; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px;")
+        body_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px;")
         req_layout.addWidget(body_label)
         self.create_body = AutoCompleteTextEdit(self.user, self._sql_variables)
         self.create_body.setPlaceholderText('{\n  "phone": "5511999999999",\n  "first_name": "{{nome}}"\n}')
         self.create_body.setMinimumHeight(180)
-        self.create_body.setStyleSheet("QTextEdit { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-size: 12px; color: #c9d1d9; font-family: Consolas; } QTextEdit:focus { border: 1px solid #1f6feb; }")
+        self.create_body.setStyleSheet(f"QTextEdit {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 6px; padding: 12px; font-size: 12px; color: {t.text}; font-family: Consolas; }} QTextEdit:focus {{ border: 1px solid {t.primary}; }}")
         req_layout.addWidget(self.create_body)
         main_layout.addWidget(section_req)
         section_schedule = QFrame()
-        section_schedule.setStyleSheet("QFrame { background-color: #0d1117; border: 1px solid #21262d; border-radius: 6px; }")
+        section_schedule.setStyleSheet(f"QFrame {{ background-color: {t.bg}; border: 1px solid {t.surface_elevated}; border-radius: 6px; }}")
         sched_layout = QVBoxLayout(section_schedule)
         sched_layout.setContentsMargins(16, 14, 16, 14)
         sched_layout.setSpacing(10)
         sched_title = QLabel("Execucao Automatica")
-        sched_title.setStyleSheet("font-size: 11px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
+        sched_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;")
         sched_layout.addWidget(sched_title)
         self.create_schedule = ScheduleWidget()
         sched_layout.addWidget(self.create_schedule)
         main_layout.addWidget(section_schedule)
         self.btn_save = QPushButton("Criar Requisição")
         self.btn_save.setCursor(Qt.PointingHandCursor)
-        self.btn_save.setStyleSheet("QPushButton { background-color: #1f6feb; color: #fff; border: none; border-radius: 6px; padding: 12px; font-size: 14px; font-weight: 700; } QPushButton:hover { background-color: #388bfd; } QPushButton:disabled { background-color: #21262d; color: #484f58; }")
+        self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {t.primary}; color: {t.selection_text}; border: none; border-radius: 6px; padding: 12px; font-size: 14px; font-weight: 700; }} QPushButton:hover {{ background-color: {t.primary_hover}; }} QPushButton:disabled {{ background-color: {t.surface_elevated}; color: {t.text_muted}; }}")
         self.btn_save.clicked.connect(self._create)
         main_layout.addWidget(self.btn_save)
         layout.addWidget(main_card)
@@ -752,6 +769,7 @@ class RequisicoesView(QWidget):
         self._populate_table(integs)
 
     def _populate_table(self, integs: list):
+        t = theme_manager.current()
         self.table.setRowCount(0)
         for cfg in integs:
             row = self.table.rowCount()
@@ -760,13 +778,13 @@ class RequisicoesView(QWidget):
             self.table.setItem(row, 0, QTableWidgetItem(name))
             active = cfg.get("is_active", False)
             active_item = QTableWidgetItem("Ativo" if active else "Inativo")
-            active_item.setForeground(Qt.green if active else Qt.red)
+            active_item.setForeground(QColor(t.success) if active else QColor(t.danger))
             self.table.setItem(row, 1, active_item)
             integ_type = cfg.get("type", "normal")
             type_label = "Cobranca" if integ_type == "cobranca" else "Normal"
             type_item = QTableWidgetItem(type_label)
             if integ_type == "cobranca":
-                type_item.setForeground(QColor("#d29922"))
+                type_item.setForeground(QColor(t.warning))
             self.table.setItem(row, 2, type_item)
             preset = cfg.get("schedule_preset")
             if cfg.get("schedule_enabled") and preset:
@@ -807,20 +825,20 @@ class RequisicoesView(QWidget):
             actions_layout.setSpacing(4)
             if self._is_admin:
                 btn_rename = QPushButton("Renomear")
-                btn_rename.setStyleSheet("font-size: 12px; padding: 4px 12px; background: transparent; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; font-weight: 600;")
+                btn_rename.setStyleSheet(f"font-size: 12px; padding: 4px 12px; background: transparent; border: 1px solid {t.border}; border-radius: 4px; color: {t.text_secondary}; font-weight: 600;")
                 btn_rename.clicked.connect(lambda checked, c=cfg: self._rename(c))
                 actions_layout.addWidget(btn_rename)
                 btn_edit = QPushButton("Editar")
-                btn_edit.setStyleSheet("font-size: 12px; padding: 4px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-weight: 600;")
+                btn_edit.setStyleSheet(f"font-size: 12px; padding: 4px 12px; background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.text}; font-weight: 600;")
                 btn_edit.clicked.connect(lambda checked, c=cfg: self._edit(c))
                 actions_layout.addWidget(btn_edit)
             btn_trigger = QPushButton("Executar")
-            btn_trigger.setStyleSheet("font-size: 12px; padding: 4px 12px; background: #1f6feb; border: none; border-radius: 4px; color: #fff; font-weight: 600;")
+            btn_trigger.setStyleSheet(f"font-size: 12px; padding: 4px 12px; background: {t.primary}; border: none; border-radius: 4px; color: {t.selection_text}; font-weight: 600;")
             btn_trigger.clicked.connect(lambda checked, c=cfg: self._trigger(c))
             actions_layout.addWidget(btn_trigger)
             if self._is_admin:
                 btn_delete = QPushButton("Excluir")
-                btn_delete.setStyleSheet("font-size: 12px; padding: 4px 12px; background: transparent; border: 1px solid #f85149; border-radius: 4px; color: #f85149; font-weight: 600;")
+                btn_delete.setStyleSheet(f"font-size: 12px; padding: 4px 12px; background: transparent; border: 1px solid {t.danger}; border-radius: 4px; color: {t.danger}; font-weight: 600;")
                 btn_delete.clicked.connect(lambda checked, c=cfg: self._delete(c))
                 actions_layout.addWidget(btn_delete)
             actions_layout.addStretch()
@@ -917,4 +935,3 @@ class RequisicoesView(QWidget):
             lambda e: show_error(self, "Erro", str(e)),
             cfg["id"],
         )
-

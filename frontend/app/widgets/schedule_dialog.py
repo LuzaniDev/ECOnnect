@@ -5,26 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 
-SCHEDULE_STYLE = """
-QDialog {
-    background-color: #0d1117;
-    color: #c9d1d9;
-}
-QLabel {
-    color: #c9d1d9;
-    font-size: 13px;
-}
-QRadioButton {
-    color: #c9d1d9;
-    font-size: 13px;
-    spacing: 8px;
-}
-QDateTimeEdit {
-    background: #0d1117; border: 1px solid #30363d;
-    border-radius: 4px; padding: 8px; color: #c9d1d9;
-    font-size: 13px;
-}
-"""
+SCHEDULE_STYLE = ""
 
 
 class ScheduleDialog(QDialog):
@@ -39,14 +20,14 @@ class ScheduleDialog(QDialog):
         layout.setSpacing(16)
 
         title = QLabel("Agendar Envio")
-        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #f1f5f9;")
+        title.setStyleSheet("font-size: 20px; font-weight: 800;")
         layout.addWidget(title)
 
         info = QLabel(
             f"{client_count} cliente{'s' if client_count != 1 else ''} selecionado{'s' if client_count != 1 else ''} · "
             f"Template: {template_name or 'Nenhum'}"
         )
-        info.setStyleSheet("color: #8b949e; font-size: 12px; padding-bottom: 8px;")
+        info.setStyleSheet("font-size: 12px; padding-bottom: 8px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -73,26 +54,12 @@ class ScheduleDialog(QDialog):
         btn_layout.addStretch()
 
         btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setStyleSheet("""
-            QPushButton {
-                background: transparent; border: 1px solid #30363d;
-                border-radius: 6px; padding: 10px 24px;
-                color: #8b949e; font-size: 13px; font-weight: 600;
-            }
-            QPushButton:hover { background: #161b22; }
-        """)
+        btn_cancel.setProperty("ghost", True)
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(btn_cancel)
 
         btn_confirm = QPushButton("Confirmar")
-        btn_confirm.setStyleSheet("""
-            QPushButton {
-                background: #1f6feb; color: #fff; border: none;
-                border-radius: 6px; padding: 10px 24px;
-                font-size: 13px; font-weight: 700;
-            }
-            QPushButton:hover { background: #388bfd; }
-        """)
+        btn_confirm.setProperty("primary", True)
         btn_confirm.clicked.connect(self.accept)
         btn_layout.addWidget(btn_confirm)
 

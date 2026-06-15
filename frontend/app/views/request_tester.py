@@ -28,6 +28,7 @@ import json
 from datetime import datetime
 from frontend.app.widgets.dialogs import show_error, show_success
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager, _hex_to_rgb
 
 
 HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
@@ -38,43 +39,45 @@ PROVIDERS = [
     ("mundobots", "Mundo dos Bots"),
 ]
 
-RESULT_STYLE = """
-QFrame#resultCard {
-    background-color: #0d1525;
-    border: 1px solid #1e2d4a;
+
+def _result_qss(t):
+    return f"""
+QFrame#resultCard {{
+    background-color: {t.surface};
+    border: 1px solid {t.border};
     border-radius: 12px;
     padding: 24px;
-}
-QLabel#resultTitle {
+}}
+QLabel#resultTitle {{
     font-size: 14px;
     font-weight: 700;
-    color: #f1f5f9;
+    color: {t.text};
     padding-bottom: 12px;
-}
-QLabel#statusSuccess {
+}}
+QLabel#statusSuccess {{
     font-size: 32px;
     font-weight: 800;
-    color: #22c55e;
-}
-QLabel#statusError {
+    color: {t.success};
+}}
+QLabel#statusError {{
     font-size: 32px;
     font-weight: 800;
-    color: #ef4444;
-}
-QLabel#statusPending {
+    color: {t.danger};
+}}
+QLabel#statusPending {{
     font-size: 18px;
     font-weight: 600;
-    color: #f8891d;
-}
-QTextEdit#responseBody {
-    background-color: #0a0f1a;
-    border: 1px solid #1e2d4a;
+    color: {t.warning};
+}}
+QTextEdit#responseBody {{
+    background-color: {t.bg};
+    border: 1px solid {t.border};
     border-radius: 8px;
     padding: 16px;
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 12px;
-    color: #22c55e;
-}
+    color: {t.success};
+}}
 """
 
 
@@ -85,6 +88,7 @@ class KeyValueEditor(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -102,7 +106,7 @@ class KeyValueEditor(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         add_btn = QPushButton("+ Adicionar")
-        add_btn.setStyleSheet("QPushButton { background-color: #1e2d4a; color: #94a3b8; border: none; padding: 8px 16px; border-radius: 6px; } QPushButton:hover { background-color: #2a3d5e; color: #f1f5f9; }")
+        add_btn.setStyleSheet(f"QPushButton {{ background-color: {t.surface_elevated}; color: {t.text_muted}; border: none; padding: 8px 16px; border-radius: 6px; }} QPushButton:hover {{ background-color: {t.border}; color: {t.text}; }}")
         add_btn.clicked.connect(self._add_row)
         btn_row.addWidget(add_btn)
         layout.addLayout(btn_row)
@@ -144,33 +148,34 @@ class RequestTesterView(QWidget):
         self._load_templates()
 
     def _setup_ui(self):
+        t = theme_manager.current()
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         header = QFrame()
-        header.setStyleSheet("background-color: #0a1220; border-bottom: 1px solid #1e2d4a; padding: 16px 24px;")
+        header.setStyleSheet(f"background-color: {t.surface}; border-bottom: 1px solid {t.border}; padding: 16px 24px;")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
         title = QLabel("Testador de Requisições")
-        title.setStyleSheet("font-size: 22px; font-weight: 700; color: #f1f5f9;")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {t.text};")
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
         view_label = QLabel("Visualização:")
-        view_label.setStyleSheet("font-size: 13px; color: #64748b;")
+        view_label.setStyleSheet(f"font-size: 13px; color: {t.text_secondary};")
         header_layout.addWidget(view_label)
 
         self.view_group = QButtonGroup()
         self.btn_tecnica = QPushButton("Técnica")
         self.btn_tecnica.setCheckable(True)
         self.btn_tecnica.setChecked(True)
-        self.btn_tecnica.setStyleSheet("QPushButton { background-color: #014998; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; }")
+        self.btn_tecnica.setStyleSheet(f"QPushButton {{ background-color: {t.primary}; color: {t.selection_text}; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; }}")
         self.btn_grafica = QPushButton("Gráfica")
         self.btn_grafica.setCheckable(True)
-        self.btn_grafica.setStyleSheet("QPushButton { background-color: transparent; color: #94a3b8; border: 1px solid #1e2d4a; padding: 10px 20px; border-radius: 8px; }")
+        self.btn_grafica.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {t.text_muted}; border: 1px solid {t.border}; padding: 10px 20px; border-radius: 8px; }}")
         self.view_group.addButton(self.btn_tecnica, 0)
         self.view_group.addButton(self.btn_grafica, 1)
         self.btn_tecnica.clicked.connect(lambda: self._set_view(0))
@@ -193,16 +198,20 @@ class RequestTesterView(QWidget):
         main_layout.addWidget(self.stack, 1)
 
     def _set_view(self, index: int):
+        t = theme_manager.current()
         self.tecnica_view.setVisible(index == 0)
         self.grafica_view.setVisible(index == 1)
+        active = f"QPushButton {{ background-color: {t.primary}; color: {t.selection_text}; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; }}"
+        inactive = f"QPushButton {{ background-color: transparent; color: {t.text_muted}; border: 1px solid {t.border}; padding: 10px 20px; border-radius: 8px; }}"
         if index == 0:
-            self.btn_tecnica.setStyleSheet("QPushButton { background-color: #014998; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; }")
-            self.btn_grafica.setStyleSheet("QPushButton { background-color: transparent; color: #94a3b8; border: 1px solid #1e2d4a; padding: 10px 20px; border-radius: 8px; }")
+            self.btn_tecnica.setStyleSheet(active)
+            self.btn_grafica.setStyleSheet(inactive)
         else:
-            self.btn_grafica.setStyleSheet("QPushButton { background-color: #014998; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; }")
-            self.btn_tecnica.setStyleSheet("QPushButton { background-color: transparent; color: #94a3b8; border: 1px solid #1e2d4a; padding: 10px 20px; border-radius: 8px; }")
+            self.btn_grafica.setStyleSheet(active)
+            self.btn_tecnica.setStyleSheet(inactive)
 
     def _create_technical_view(self) -> QWidget:
+        t = theme_manager.current()
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -218,34 +227,34 @@ class RequestTesterView(QWidget):
         self.method_combo = QComboBox()
         self.method_combo.addItems(HTTP_METHODS)
         self.method_combo.setCurrentText("POST")
-        self.method_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #014998;
-                color: white;
+        self.method_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {t.primary};
+                color: {t.selection_text};
                 border: none;
                 border-radius: 8px;
                 padding: 12px 16px;
                 font-size: 14px;
                 font-weight: 700;
                 min-width: 100px;
-            }
+            }}
         """)
         url_row.addWidget(self.method_combo)
 
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("https://api.exemplo.com/endpoint")
-        self.url_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #0d1525;
-                border: 1px solid #1e2d4a;
+        self.url_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {t.surface};
+                border: 1px solid {t.border};
                 border-radius: 8px;
                 padding: 12px 16px;
                 font-size: 14px;
-                color: #f1f5f9;
-            }
-            QLineEdit:focus {
-                border: 1px solid #014998;
-            }
+                color: {t.text};
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {t.primary};
+            }}
         """)
         url_row.addWidget(self.url_input, 1)
 
@@ -272,16 +281,16 @@ class RequestTesterView(QWidget):
         body_layout.setContentsMargins(0, 12, 0, 0)
         self.body_input = QTextEdit()
         self.body_input.setPlaceholderText('{\n  "key": "value"\n}')
-        self.body_input.setStyleSheet("""
-            QTextEdit {
-                background-color: #0d1525;
-                border: 1px solid #1e2d4a;
+        self.body_input.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {t.surface};
+                border: 1px solid {t.border};
                 border-radius: 8px;
                 padding: 16px;
                 font-family: 'Consolas', 'Monaco', monospace;
                 font-size: 13px;
-                color: #f1f5f9;
-            }
+                color: {t.text};
+            }}
         """)
         body_layout.addWidget(self.body_input)
         tabs.addTab(body_tab, "Body")
@@ -313,7 +322,7 @@ class RequestTesterView(QWidget):
         right = QScrollArea()
         right.setWidgetResizable(True)
         right.setFrameShape(QFrame.NoFrame)
-        right.setStyleSheet("background-color: #0a1220; border-left: 1px solid #1e2d4a;")
+        right.setStyleSheet(f"background-color: {t.surface}; border-left: 1px solid {t.border};")
 
         result_container = QWidget()
         result_layout = QVBoxLayout(result_container)
@@ -322,7 +331,7 @@ class RequestTesterView(QWidget):
 
         self.result_card = QFrame()
         self.result_card.setObjectName("resultCard")
-        self.result_card.setStyleSheet(RESULT_STYLE)
+        self.result_card.setStyleSheet(_result_qss(t))
         result_layout.addWidget(self.result_card)
 
         right.setWidget(result_container)
@@ -334,6 +343,7 @@ class RequestTesterView(QWidget):
         return widget
 
     def _create_graphical_view(self) -> QWidget:
+        t = theme_manager.current()
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -344,7 +354,7 @@ class RequestTesterView(QWidget):
         left_layout.setSpacing(16)
 
         provider_label = QLabel("Provedor")
-        provider_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;")
+        provider_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; text-transform: uppercase;")
         left_layout.addWidget(provider_label)
 
         self.provider_combo = QComboBox()
@@ -354,7 +364,7 @@ class RequestTesterView(QWidget):
         left_layout.addWidget(self.provider_combo)
 
         template_label = QLabel("Template")
-        template_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
+        template_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
         left_layout.addWidget(template_label)
 
         self.template_combo_graf = QComboBox()
@@ -362,7 +372,7 @@ class RequestTesterView(QWidget):
         left_layout.addWidget(self.template_combo_graf)
 
         self.params_frame = QFrame()
-        self.params_frame.setStyleSheet("QFrame { background-color: #141d32; border: 1px solid #1e2d4a; border-radius: 10px; padding: 16px; }")
+        self.params_frame.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 10px; padding: 16px; }}")
         self.params_layout = QVBoxLayout(self.params_frame)
         self.params_layout.setSpacing(12)
 
@@ -372,7 +382,7 @@ class RequestTesterView(QWidget):
         left_layout.addWidget(self.params_frame)
 
         phone_label = QLabel("Telefone do Destino")
-        phone_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
+        phone_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
         left_layout.addWidget(phone_label)
 
         self.phone_input_graf = QLineEdit()
@@ -380,7 +390,7 @@ class RequestTesterView(QWidget):
         left_layout.addWidget(self.phone_input_graf)
 
         url_label = QLabel("URL da API (opcional)")
-        url_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
+        url_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; text-transform: uppercase; padding-top: 8px;")
         left_layout.addWidget(url_label)
 
         self.url_input_graf = QLineEdit()
@@ -398,7 +408,7 @@ class RequestTesterView(QWidget):
         right = QScrollArea()
         right.setWidgetResizable(True)
         right.setFrameShape(QFrame.NoFrame)
-        right.setStyleSheet("background-color: #0a1220; border-left: 1px solid #1e2d4a;")
+        right.setStyleSheet(f"background-color: {t.surface}; border-left: 1px solid {t.border};")
 
         result_container = QWidget()
         result_layout = QVBoxLayout(result_container)
@@ -407,7 +417,7 @@ class RequestTesterView(QWidget):
 
         self.result_card_graf = QFrame()
         self.result_card_graf.setObjectName("resultCard")
-        self.result_card_graf.setStyleSheet(RESULT_STYLE)
+        self.result_card_graf.setStyleSheet(_result_qss(t))
         result_layout.addWidget(self.result_card_graf)
 
         right.setWidget(result_container)
@@ -419,6 +429,7 @@ class RequestTesterView(QWidget):
         return widget
 
     def _init_result_card(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self.result_card)
         layout.setSpacing(12)
 
@@ -431,11 +442,11 @@ class RequestTesterView(QWidget):
         layout.addWidget(self.status_label)
 
         self.status_detail = QLabel("")
-        self.status_detail.setStyleSheet("font-size: 13px; color: #64748b;")
+        self.status_detail.setStyleSheet(f"font-size: 13px; color: {t.text_secondary};")
         layout.addWidget(self.status_detail)
 
         self.response_label = QLabel("Resposta:")
-        self.response_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; padding-top: 12px;")
+        self.response_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; padding-top: 12px;")
         self.response_label.setVisible(False)
         layout.addWidget(self.response_label)
 
@@ -449,6 +460,7 @@ class RequestTesterView(QWidget):
         layout.addStretch()
 
     def _init_result_card_graf(self):
+        t = theme_manager.current()
         layout = QVBoxLayout(self.result_card_graf)
         layout.setSpacing(12)
 
@@ -461,11 +473,11 @@ class RequestTesterView(QWidget):
         layout.addWidget(self.status_label_graf)
 
         self.status_detail_graf = QLabel("")
-        self.status_detail_graf.setStyleSheet("font-size: 13px; color: #64748b;")
+        self.status_detail_graf.setStyleSheet(f"font-size: 13px; color: {t.text_secondary};")
         layout.addWidget(self.status_detail_graf)
 
         self.response_label_graf = QLabel("Resposta:")
-        self.response_label_graf.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600; padding-top: 12px;")
+        self.response_label_graf.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600; padding-top: 12px;")
         self.response_label_graf.setVisible(False)
         layout.addWidget(self.response_label_graf)
 
@@ -516,10 +528,11 @@ class RequestTesterView(QWidget):
             if t["id"] == template_id:
                 param_count = t.get("parameter_count", 0)
                 if param_count > 0:
+                    t2 = theme_manager.current()
                     self.params_frame.setVisible(True)
                     for i in range(param_count):
                         label = QLabel(f"Parâmetro {i + 1}")
-                        label.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600;")
+                        label.setStyleSheet(f"color: {t2.text_muted}; font-size: 12px; font-weight: 600;")
                         self.params_inner.addWidget(label)
 
                         edit = QLineEdit()
@@ -678,6 +691,7 @@ class RequestTesterView(QWidget):
             self._handle_result(event.result)
 
     def _handle_result(self, result: dict):
+        t = theme_manager.current()
         self.last_response = result
 
         is_error = result.get("error", False)
@@ -704,12 +718,14 @@ class RequestTesterView(QWidget):
         self.response_label.setVisible(True)
         self.response_body.setVisible(True)
 
+        body_qss = f"QTextEdit#responseBody {{ background-color: {t.bg}; border: 1px solid {t.border}; border-radius: 8px; padding: 16px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: {t.success}; }}"
+        body_qss_fallback = f"QTextEdit#responseBody {{ background-color: {t.bg}; border: 1px solid {t.border}; border-radius: 8px; padding: 16px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: {t.warning}; }}"
         try:
             formatted = json.dumps(json.loads(body), indent=2, ensure_ascii=False)
-            self.response_body.setStyleSheet("QTextEdit#responseBody { background-color: #0a0f1a; border: 1px solid #1e2d4a; border-radius: 8px; padding: 16px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #22c55e; }")
+            self.response_body.setStyleSheet(body_qss)
         except:
             formatted = body
-            self.response_body.setStyleSheet("QTextEdit#responseBody { background-color: #0a0f1a; border: 1px solid #1e2d4a; border-radius: 8px; padding: 16px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #f8891d; }")
+            self.response_body.setStyleSheet(body_qss_fallback)
 
         self.response_body.setPlainText(formatted)
 

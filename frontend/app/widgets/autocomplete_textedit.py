@@ -2,6 +2,7 @@ import re
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QTextEdit, QListWidget, QFrame, QVBoxLayout
 from PySide6.QtGui import QTextCursor
+from frontend.app.core.theme import theme_manager
 
 
 class AutoCompleteTextEdit(QTextEdit):
@@ -97,13 +98,14 @@ class AutoCompleteTextEdit(QTextEdit):
 
         self._popup = QFrame(self)
         self._popup.setWindowFlags(Qt.Popup)
-        self._popup.setStyleSheet("""
-            QFrame { background: #161b22; border: 1px solid #30363d;
-                     border-radius: 6px; }
-            QListWidget { background: transparent; color: #c9d1d9;
-                          border: none; font-size: 12px; }
-            QListWidget::item { padding: 6px 12px; }
-            QListWidget::item:selected { background: #1f6feb; color: #fff; }
+        t = theme_manager.current()
+        self._popup.setStyleSheet(f"""
+            QFrame {{ background: {t.surface}; border: 1px solid {t.border};
+                     border-radius: 6px; }}
+            QListWidget {{ background: transparent; color: {t.text};
+                          border: none; font-size: 12px; }}
+            QListWidget::item {{ padding: 6px 12px; }}
+            QListWidget::item:selected {{ background: {t.primary}; color: {t.selection_text}; }}
         """)
 
         layout = QVBoxLayout(self._popup)

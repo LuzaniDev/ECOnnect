@@ -18,6 +18,7 @@ from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.widgets.history_dialog import HistoryDialog
 from frontend.app.api import request_api
 from frontend.app.core.logger import logger
+from frontend.app.core.theme import theme_manager
 
 
 STATUS_MAP = {
@@ -26,11 +27,14 @@ STATUS_MAP = {
     "cancelled": "Cancelado",
 }
 
-STATUS_COLORS = {
-    "pending": "#f8891d",
-    "sent": "#22c55e",
-    "cancelled": "#ef4444",
-}
+
+def _status_colors():
+    t = theme_manager.current()
+    return {
+        "pending": t.warning,
+        "sent": t.success,
+        "cancelled": t.danger,
+    }
 
 
 class RequestEditDialog(QDialog):
@@ -38,15 +42,7 @@ class RequestEditDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Editar Requisição")
         self.setMinimumWidth(500)
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #0a1220;
-                color: #f1f5f9;
-            }
-            QLabel { color: #f1f5f9; }
-        """
-        )
+
 
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
@@ -54,10 +50,6 @@ class RequestEditDialog(QDialog):
         form.setSpacing(10)
 
         info_frame = QFrame()
-        info_frame.setStyleSheet(
-            "QFrame { background-color: #141d32; border: 1px solid #1e2d4a; "
-            "border-radius: 8px; padding: 16px; }"
-        )
         info_layout = QVBoxLayout(info_frame)
 
         info = QLabel(
@@ -66,7 +58,7 @@ class RequestEditDialog(QDialog):
             f"Tag: {request_data.get('tag') or '—'}  |  "
             f"Status: {STATUS_MAP.get(request_data.get('status', ''), request_data.get('status', ''))}"
         )
-        info.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        info.setStyleSheet("font-size: 12px;")
         info.setWordWrap(True)
         info_layout.addWidget(info)
         form.addRow(info_frame)
@@ -101,12 +93,12 @@ class RequestListView(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Requisições")
-        title.setStyleSheet("font-size: 24px; font-weight: 700; color: #f1f5f9; ")
+        title.setStyleSheet("font-size: 24px; font-weight: 700;")
         header.addWidget(title)
         header.addStretch()
 
         filter_label = QLabel("Filtrar:")
-        filter_label.setStyleSheet("font-size: 12px; color: #64748b;")
+        filter_label.setStyleSheet("font-size: 12px;")
         header.addWidget(filter_label)
 
         self.filter_combo = QComboBox()
@@ -126,14 +118,12 @@ class RequestListView(QWidget):
 
         self.btn_send = QPushButton("Enviar")
         self.btn_send.setProperty("accent", True)
-        self.btn_send.setStyleSheet("font-weight: 600;")
         self.btn_send.setVisible(False)
         self.btn_send.clicked.connect(self._send_selected)
         header.addWidget(self.btn_send)
 
         self.btn_cancel = QPushButton("Cancelar")
         self.btn_cancel.setProperty("danger", True)
-        self.btn_cancel.setStyleSheet("QPushButton[danger=true] { font-weight: 600; }")
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self._cancel_selected)
         header.addWidget(self.btn_cancel)
@@ -163,6 +153,7 @@ class RequestListView(QWidget):
         )
 
     def _on_requests(self, requests: list):
+        t = theme_manager.current()
         self.table.clear_all()
         for r in requests:
             template_name = r.get("template_name", "")
@@ -177,6 +168,7 @@ class RequestListView(QWidget):
             tag = r.get("tag") or "—"
             created_at = (r.get("created_at") or "")[:10]
 
+            colors = _status_colors()
             self.table.add_row(
                 [
                     template_name,
@@ -186,7 +178,7 @@ class RequestListView(QWidget):
                     creator_name,
                     created_at,
                 ],
-                {"data": r, "status_color": STATUS_COLORS.get(r["status"], "#64748b")},
+                {"data": r, "status_color": colors.get(r["status"], t.text_secondary)},
             )
 
     def _on_selection(self):

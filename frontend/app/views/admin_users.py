@@ -78,7 +78,7 @@ class UserEditDialog(QDialog):
         self.cooldown_spin.setRange(0, 720)
         self.cooldown_spin.setSuffix(" horas")
         self.cooldown_spin.setValue(user_data.get("cobranca_cooldown_hours", 48))
-        form.addRow("Cooldown cobrança:", self.cooldown_spin)
+        form.addRow("Intervalo entre disparos:", self.cooldown_spin)
 
         layout.addLayout(form)
 
@@ -128,7 +128,7 @@ class AdminUsersView(QWidget):
         layout.addLayout(header)
 
         self.table = StyledTable(
-            ["Usuário", "Email", "Função", "Ativo", "Cooldown", "Criado em"]
+            ["Usuário", "Email", "Função", "Ativo", "Intervalo", "Criado em"]
         )
         self.table.currentItemChanged.connect(self._on_selection)
         layout.addWidget(self.table)

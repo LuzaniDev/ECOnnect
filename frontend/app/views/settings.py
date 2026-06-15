@@ -184,7 +184,7 @@ class UserSettingsView(QWidget):
         tag_card_layout = QVBoxLayout(tag_card)
         tag_card_layout.setSpacing(6)
 
-        tag_section = QLabel("Cooldown por Tag")
+        tag_section = QLabel("Intervalo entre disparos por Tag")
         tag_section.setObjectName("sectionTitle")
         tag_card_layout.addWidget(tag_section)
 
@@ -192,7 +192,7 @@ class UserSettingsView(QWidget):
             "Defina o tempo de bloqueio (em horas) para cada tag. "
             "As tags sao carregadas automaticamente dos templates existentes. "
             "Quando uma mensagem com a tag for enviada para um cliente, "
-            "ele nao podera receber outra com a mesma tag ate que o cooldown expire."
+            "ele nao podera receber outra com a mesma tag ate que o intervalo expire."
         )
         tag_desc.setObjectName("sectionDesc")
         tag_desc.setWordWrap(True)
@@ -237,7 +237,7 @@ class UserSettingsView(QWidget):
         tag_card_layout.addWidget(self.tag_table)
 
         tag_card_layout.addSpacing(6)
-        btn_save_tags = QPushButton("Salvar Cooldown das Tags")
+        btn_save_tags = QPushButton("Salvar Intervalo das Tags")
         btn_save_tags.setProperty("accent", True)
         btn_save_tags.setCursor(Qt.PointingHandCursor)
         btn_save_tags.clicked.connect(self._save_tag_cooldowns)
@@ -339,7 +339,7 @@ class UserSettingsView(QWidget):
         for tag, spin in self._tag_spins.items():
             config[tag] = spin.value()
         self._save_tag_cooldown_config(config)
-        show_success(self, "OK", "Cooldown das tags salvo com sucesso!")
+        show_success(self, "OK", "Intervalo das tags salvo com sucesso!")
 
     def _load_fb_config(self):
         eco_empresa = self.user.get("eco_empresa")

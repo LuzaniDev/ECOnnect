@@ -354,7 +354,7 @@ class RequestFormView(QWidget):
     def _on_send_error(self, error: str):
         self.btn_send.setEnabled(True)
         logger.error("REQ_FORM", "Erro ao criar requisição", erro=error)
-        if "Cooldown" in error:
+        if "Intervalo" in error:
             self.cooldown_warning.setText(error)
             self.cooldown_warning.setVisible(True)
         show_error(self, "Erro", error)

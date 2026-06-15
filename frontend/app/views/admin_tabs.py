@@ -65,6 +65,7 @@ class AdminTabsView(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self.table.setSortingEnabled(True)
         self.table.verticalHeader().setDefaultSectionSize(40)
         t = theme_manager.current()
         self.table.setStyleSheet(f"""

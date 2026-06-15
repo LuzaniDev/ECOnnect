@@ -238,7 +238,8 @@ QTabBar::tab:hover {{
         layout.addWidget(self.tabs)
 
         self.tabs.addTab(self._build_cobranca_tab(), "Cobrança em Lote")
-        self.tabs.addTab(self._build_clientes_tab(), "Clientes Configurados")
+        self.tabs.addTab(self._build_clientes_tab(), "Clientes Agendados")
+        self.tabs.addTab(self._build_history_tab(), "Histórico de Envios")
         self.tabs.addTab(self._build_template_tab(), "Criar Template")
 
     # ================== COBRANCA TAB ==================
@@ -305,7 +306,7 @@ QTabBar::tab:hover {{
         self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
         page_row.addWidget(self.lbl_loading)
 
-        self.lbl_configured_hidden = QLabel("0 clientes ocultos")
+        self.lbl_configured_hidden = QLabel("0 clientes agendados")
         self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         self.lbl_configured_hidden.setCursor(Qt.PointingHandCursor)
         self.lbl_configured_hidden.mousePressEvent = lambda e: self._show_hidden_clients_dialog()
@@ -366,34 +367,9 @@ QTabBar::tab:hover {{
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
                 border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
         """)
+        self.table.setSortingEnabled(True)
         layout.addWidget(self.table, 1)
         self.table.itemChanged.connect(self._on_check_changed)
-
-        # ── Preview ──
-        preview_card = QFrame()
-        preview_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}")
-        preview_layout = QVBoxLayout(preview_card)
-        preview_layout.setContentsMargins(20, 12, 20, 12)
-        preview_layout.setSpacing(8)
-
-        preview_header = QHBoxLayout()
-        preview_title = QLabel("PRÉVIA DO ENVIO")
-        preview_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
-        preview_header.addWidget(preview_title)
-        preview_header.addStretch()
-        preview_layout.addLayout(preview_header)
-
-        self.preview_text = QTextEdit()
-        self.preview_text.setReadOnly(True)
-        self.preview_text.setMinimumHeight(80)
-        self.preview_text.setMaximumHeight(150)
-        self.preview_text.setStyleSheet(f"""
-            QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 8px; color: {t.text};
-                font-size: 11px; font-family: Consolas, monospace; }}
-        """)
-        preview_layout.addWidget(self.preview_text)
-        layout.addWidget(preview_card)
 
         # ── Selected + Actions ──
         actions_card = QFrame()
@@ -421,9 +397,19 @@ QTabBar::tab:hover {{
             QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
                 border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
         """)
-        self.cmb_template.currentIndexChanged.connect(self._update_preview)
         template_row.addWidget(self.cmb_template)
         template_row.addStretch()
+
+        btn_visualizar = QPushButton("Visualizar")
+        btn_visualizar.setCursor(Qt.PointingHandCursor)
+        btn_visualizar.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: 6px; padding: 8px 20px;
+                font-size: 13px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        btn_visualizar.clicked.connect(self._open_preview_dialog)
+        template_row.addWidget(btn_visualizar)
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
@@ -437,18 +423,18 @@ QTabBar::tab:hover {{
         self.btn_cancelar.clicked.connect(self._cancelar_selecao)
         template_row.addWidget(self.btn_cancelar)
 
-        self.btn_configurar = QPushButton("Configurar")
-        self.btn_configurar.setCursor(Qt.PointingHandCursor)
-        self.btn_configurar.setStyleSheet(f"""
+        self.btn_agendar = QPushButton("Agendar")
+        self.btn_agendar.setCursor(Qt.PointingHandCursor)
+        self.btn_agendar.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.warning};
                 border-radius: 6px; padding: 8px 20px;
                 font-size: 13px; font-weight: 700; color: {t.warning}; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.warning)},0.1); }}
             QPushButton:disabled {{ border-color: {t.border}; color: {t.text_muted}; }}
         """)
-        self.btn_configurar.setEnabled(False)
-        self.btn_configurar.clicked.connect(self._configurar)
-        template_row.addWidget(self.btn_configurar)
+        self.btn_agendar.setEnabled(False)
+        self.btn_agendar.clicked.connect(self._agendar)
+        template_row.addWidget(self.btn_agendar)
 
         self.btn_enviar = QPushButton("Enviar Agora")
         self.btn_enviar.setCursor(Qt.PointingHandCursor)
@@ -483,7 +469,7 @@ QTabBar::tab:hover {{
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Clientes Configurados")
+        title = QLabel("Clientes Agendados")
         title.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {t.text};")
         header.addWidget(title)
         header.addStretch()
@@ -499,6 +485,67 @@ QTabBar::tab:hover {{
         btn_refresh_jobs.clicked.connect(self._refresh_clientes_tab)
         header.addWidget(btn_refresh_jobs)
         layout.addLayout(header)
+
+        filter_card = QFrame()
+        filter_card.setStyleSheet(f"""
+            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}
+        """)
+        filter_layout = QVBoxLayout(filter_card)
+        filter_layout.setContentsMargins(16, 12, 16, 12)
+        filter_layout.setSpacing(8)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self.job_search_input = QLineEdit()
+        self.job_search_input.setPlaceholderText("Buscar por nome, template ou tag...")
+        self.job_search_input.setStyleSheet(f"""
+            QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+        """)
+        search_row.addWidget(self.job_search_input, 1)
+
+        search_row.addWidget(QLabel("Data início:"))
+        self.job_filter_dt_ini = QDateEdit()
+        self.job_filter_dt_ini.setCalendarPopup(True)
+        self.job_filter_dt_ini.setDate(QDate.currentDate().addMonths(-1))
+        self.job_filter_dt_ini.setSpecialValueText(" ")
+        self.job_filter_dt_ini.setStyleSheet(f"""
+            QDateEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 4px; color: {t.text}; font-size: 12px; }}
+        """)
+        search_row.addWidget(self.job_filter_dt_ini)
+
+        search_row.addWidget(QLabel("Data fim:"))
+        self.job_filter_dt_fim = QDateEdit()
+        self.job_filter_dt_fim.setCalendarPopup(True)
+        self.job_filter_dt_fim.setDate(QDate.currentDate())
+        self.job_filter_dt_fim.setSpecialValueText(" ")
+        self.job_filter_dt_fim.setStyleSheet(self.job_filter_dt_ini.styleSheet())
+        search_row.addWidget(self.job_filter_dt_fim)
+
+        btn_filter_jobs = QPushButton("Filtrar")
+        btn_filter_jobs.setCursor(Qt.PointingHandCursor)
+        btn_filter_jobs.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        btn_filter_jobs.clicked.connect(self._refresh_clientes_tab)
+        search_row.addWidget(btn_filter_jobs)
+
+        btn_clear_filters = QPushButton("Limpar")
+        btn_clear_filters.setCursor(Qt.PointingHandCursor)
+        btn_clear_filters.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: 4px; color: {t.text}; padding: 6px 12px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+        """)
+        btn_clear_filters.clicked.connect(self._clear_job_filters)
+        search_row.addWidget(btn_clear_filters)
+
+        filter_layout.addLayout(search_row)
+        layout.addWidget(filter_card)
 
         self.jobs_table = QTableWidget()
         self.jobs_table.setColumnCount(7)
@@ -524,14 +571,51 @@ QTabBar::tab:hover {{
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
                 border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
         """)
+        self.jobs_table.setSortingEnabled(True)
         layout.addWidget(self.jobs_table, 1)
 
         self._refresh_clientes_tab()
         return container
 
+    def _clear_job_filters(self):
+        self.job_search_input.clear()
+        self.job_filter_dt_ini.setDate(QDate.currentDate().addMonths(-1))
+        self.job_filter_dt_fim.setDate(QDate.currentDate())
+        self._refresh_clientes_tab()
+
     def _refresh_clientes_tab(self):
         t = theme_manager.current()
-        jobs = self._load_jobs()
+        all_jobs = self._load_jobs()
+
+        all_jobs.sort(key=lambda j: j.get("created_at", ""), reverse=True)
+
+        search_text = self.job_search_input.text().strip().lower() if hasattr(self, 'job_search_input') else ""
+        dt_ini_str = self.job_filter_dt_ini.date().toString("yyyy-MM-dd") if hasattr(self, 'job_filter_dt_ini') else ""
+        dt_fim_str = self.job_filter_dt_fim.date().toString("yyyy-MM-dd") if hasattr(self, 'job_filter_dt_fim') else ""
+        if dt_ini_str and dt_fim_str:
+            from datetime import date as _jd
+            if (_jd.fromisoformat(dt_fim_str) - _jd.fromisoformat(dt_ini_str)).days > 365*3:
+                show_error(self, "Limite excedido", "O período entre as datas não pode ultrapassar 3 anos.")
+                return
+
+        jobs = []
+        for j in all_jobs:
+            if search_text:
+                name = j.get("name", "").lower()
+                template = j.get("template_name", "").lower()
+                tag = j.get("tag", "").lower()
+                if search_text not in name and search_text not in template and search_text not in tag:
+                    continue
+            sched = j.get("scheduled_for", "")
+            if sched and dt_ini_str and dt_fim_str:
+                try:
+                    dt_val_str = datetime.fromisoformat(sched).date().isoformat()
+                    if dt_val_str < dt_ini_str or dt_val_str > dt_fim_str:
+                        continue
+                except Exception:
+                    pass
+            jobs.append(j)
+
         self.jobs_table.setRowCount(0)
         for j in jobs:
             row = self.jobs_table.rowCount()
@@ -548,6 +632,17 @@ QTabBar::tab:hover {{
                     sched = dt.strftime("%d/%m/%Y %H:%M")
                 except Exception:
                     pass
+            repeat = j.get("repeat", {})
+            if repeat and repeat.get("type") and repeat["type"] != "none":
+                labels = {
+                    "hourly": f"a cada {repeat.get('interval', 1)}h",
+                    "daily": "diário",
+                    "weekly": "semanal",
+                    "monthly": "mensal",
+                }
+                lbl = labels.get(repeat["type"], "")
+                if lbl:
+                    sched += f" ({lbl})" if sched else lbl
             self.jobs_table.setItem(row, 4, QTableWidgetItem(sched))
             status = j.get("status", "pending")
             status_item = QTableWidgetItem(status.upper())
@@ -655,6 +750,7 @@ QTabBar::tab:hover {{
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
                 border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
         """)
+        table.setSortingEnabled(True)
 
         for c in job.get("clients", []):
             r = table.rowCount()
@@ -682,6 +778,212 @@ QTabBar::tab:hover {{
         btn_layout.addStretch()
         btn_layout.addWidget(btn_fechar)
         layout.addLayout(btn_layout)
+
+        dlg.exec()
+
+    # ================== HISTORY TAB ==================
+
+    def _build_history_tab(self) -> QWidget:
+        t = theme_manager.current()
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        header = QHBoxLayout()
+        title = QLabel("Histórico de Envios")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {t.text};")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_refresh = QPushButton("Atualizar")
+        btn_refresh.setCursor(Qt.PointingHandCursor)
+        btn_refresh.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 16px;
+                font-size: 12px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+        """)
+        btn_refresh.clicked.connect(self._refresh_history_tab)
+        header.addWidget(btn_refresh)
+        layout.addLayout(header)
+
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(8)
+        self.history_table.setHorizontalHeaderLabels([
+            "Data/Hora", "Cliente", "Telefone", "Template", "Tag", "Status", "Método", "Ações"
+        ])
+        self.history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.history_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.history_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
+        self.history_table.horizontalHeader().resizeSection(7, 100)
+        self.history_table.horizontalHeader().setStretchLastSection(False)
+        self.history_table.setSortingEnabled(True)
+        self.history_table.setAlternatingRowColors(True)
+        self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.verticalHeader().setDefaultSectionSize(36)
+        self.history_table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+            QTableWidget::item {{ padding: 6px; }}
+            QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
+                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
+        """)
+        layout.addWidget(self.history_table, 1)
+
+        self._refresh_history_tab()
+        return container
+
+    def _refresh_history_tab(self):
+        t = theme_manager.current()
+        history = self._load_sent_history()
+        history.reverse()
+        self.history_table.setRowCount(0)
+
+        for entry in history:
+            row = self.history_table.rowCount()
+            self.history_table.insertRow(row)
+
+            sent_at = entry.get("sent_at", "")
+            try:
+                dt = datetime.fromisoformat(sent_at)
+                sent_at = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                pass
+            self.history_table.setItem(row, 0, QTableWidgetItem(sent_at))
+            self.history_table.setItem(row, 1, QTableWidgetItem(entry.get("client_name", "-")))
+            self.history_table.setItem(row, 2, QTableWidgetItem(entry.get("phone", "-")))
+            self.history_table.setItem(row, 3, QTableWidgetItem(entry.get("template_name", "-")))
+            self.history_table.setItem(row, 4, QTableWidgetItem(entry.get("tag", "-")))
+
+            success = entry.get("success", True)
+            status_item = QTableWidgetItem("Sucesso" if success else "Falha")
+            status_item.setForeground(QColor(t.success) if success else QColor(t.danger))
+            self.history_table.setItem(row, 5, status_item)
+            self.history_table.setItem(row, 6, QTableWidgetItem(entry.get("method", "-")))
+
+            btn_ver = QPushButton("Visualizar")
+            btn_ver.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.accent_blue};
+                    border-radius: 3px; color: {t.accent_blue}; padding: 2px 8px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba({_hex_to_rgb(t.accent_blue)},0.1); }}
+            """)
+            btn_ver.clicked.connect(lambda checked, e=entry: self._show_history_detail(e))
+            self.history_table.setCellWidget(row, 7, btn_ver)
+
+        self.history_table.setRowCount(len(history))
+
+    def _show_history_detail(self, entry: dict):
+        t = theme_manager.current()
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel, QFrame
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Detalhes do Envio")
+        dlg.resize(560, 520)
+        dlg.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+        """)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = QLabel("Detalhes do Envio")
+        title.setStyleSheet(f"font-size: 20px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        info_card = QFrame()
+        info_card.setStyleSheet(f"""
+            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; }}
+        """)
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(16, 14, 16, 14)
+        info_layout.setSpacing(6)
+
+        sent_at = entry.get("sent_at", "")
+        try:
+            dt = datetime.fromisoformat(sent_at)
+            sent_at = dt.strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            pass
+
+        success = entry.get("success", True)
+        status_text = "✅ Sucesso" if success else "❌ Falha"
+        status_color = t.success if success else t.danger
+
+        fields = [
+            ("📅 Data/Hora:", sent_at),
+            ("👤 Cliente:", entry.get("client_name", "-")),
+            ("📱 Telefone:", entry.get("phone", "-")),
+            ("📋 Template:", entry.get("template_name", "-")),
+            ("🏷️  Tag:", entry.get("tag", "-")),
+            ("🔗 URL:", entry.get("url", "-")),
+            ("⚙️  Método:", entry.get("method", "-")),
+            ("📊 Status HTTP:", str(entry.get("status_code", "-"))),
+            ("📌 Resultado:", status_text),
+        ]
+
+        for label, value in fields:
+            row_w = QWidget()
+            row_w.setStyleSheet("border: none; background: transparent;")
+            row_layout = QHBoxLayout(row_w)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+
+            lbl = QLabel(label)
+            lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
+            row_layout.addWidget(lbl)
+
+            val = QLabel(value)
+            if label.startswith("📌"):
+                val.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {status_color}; border: none; background: transparent;")
+            else:
+                val.setStyleSheet(f"font-size: 12px; color: {t.text}; border: none; background: transparent;")
+            val.setWordWrap(True)
+            row_layout.addWidget(val, 1)
+            info_layout.addWidget(row_w)
+
+        layout.addWidget(info_card)
+
+        body = entry.get("body", "")
+        if body:
+            body_label = QLabel("Mensagem enviada:")
+            body_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary};")
+            layout.addWidget(body_label)
+
+            body_edit = QTextEdit()
+            body_edit.setReadOnly(True)
+            body_edit.setPlainText(body)
+            body_edit.setMinimumHeight(100)
+            body_edit.setMaximumHeight(200)
+            body_edit.setStyleSheet(f"""
+                QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                    border-radius: 4px; padding: 8px; color: {t.text};
+                    font-size: 11px; font-family: Consolas, monospace; }}
+            """)
+            layout.addWidget(body_edit)
+
+        btn_fechar = QPushButton("Fechar")
+        btn_fechar.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 20px;
+                font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+        """)
+        btn_fechar.clicked.connect(dlg.accept)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(btn_fechar)
+        layout.addLayout(btn_row)
 
         dlg.exec()
 
@@ -939,7 +1241,7 @@ QTabBar::tab:hover {{
             with open(TAG_COOLDOWN_FILE, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            show_error(self, "Erro", f"Não foi possível salvar configuração de cooldown:\n{e}")
+            show_error(self, "Erro", f"Não foi possível salvar configuração de intervalo entre disparos:\n{e}")
 
     def _load_sent_history(self) -> list:
         try:
@@ -976,7 +1278,7 @@ QTabBar::tab:hover {{
                 break
         return {"blocked": False, "remaining_hours": 0}
 
-    def _record_sent(self, phone: str, tag: str):
+    def _record_sent(self, phone: str, tag: str, client_name: str = "", template_name: str = "", body: str = "", url: str = "", method: str = "", status_code: int = 0, success: bool = True):
         if not tag:
             return
         history = self._load_sent_history()
@@ -984,6 +1286,13 @@ QTabBar::tab:hover {{
             "phone": phone,
             "tag": tag,
             "sent_at": datetime.now().isoformat(),
+            "client_name": client_name,
+            "template_name": template_name,
+            "body": body,
+            "url": url,
+            "method": method,
+            "status_code": status_code,
+            "success": success,
         })
         self._save_sent_history(history)
 
@@ -1204,7 +1513,7 @@ QTabBar::tab:hover {{
 
     # ================== JOB CRUD ==================
 
-    def _configurar(self):
+    def _agendar(self):
         if not self._selected_rows:
             return
         template_data = self.cmb_template.currentData()
@@ -1244,6 +1553,7 @@ QTabBar::tab:hover {{
             "clients": clients,
             "status": "pending",
             "result": {},
+            "repeat": schedule.get("repeat", {"type": "none"}),
         }
 
         jobs = self._load_jobs()
@@ -1329,11 +1639,20 @@ QTabBar::tab:hover {{
                             resp = client.delete(url, headers=headers, content=body)
                         else:
                             resp = client.post(url, headers=headers, content=body)
-                        if resp.status_code < 300:
+                        success = resp.status_code < 300
+                        if success:
                             results["success"] += 1
-                            self._record_sent(phone, job_tag)
                         else:
                             results["errors"] += 1
+                        client_name = str(c[3]) if len(c) > 3 and c[3] else ""
+                        self._record_sent(phone, job_tag,
+                            client_name=client_name,
+                            template_name=job.get("template_name", ""),
+                            body=body,
+                            url=url,
+                            method=method,
+                            status_code=resp.status_code,
+                            success=success)
                     except Exception:
                         results["errors"] += 1
             return results, job["id"]
@@ -1343,13 +1662,27 @@ QTabBar::tab:hover {{
             jobs = self._load_jobs()
             for j in jobs:
                 if j["id"] == job_id:
-                    if results["errors"] == 0 and results["blocked"] == 0:
-                        j["status"] = "sent"
-                    elif results["success"] > 0:
-                        j["status"] = "partial"
+                    repeat = j.get("repeat", {})
+                    if repeat and repeat.get("type") and repeat["type"] != "none":
+                        next_run = self._compute_next_run(
+                            datetime.fromisoformat(j["scheduled_for"]),
+                            repeat
+                        )
+                        if next_run:
+                            j["scheduled_for"] = next_run.isoformat()
+                            j["status"] = "pending"
+                            j["result"] = results
+                        else:
+                            j["status"] = "sent"
+                            j["result"] = results
                     else:
-                        j["status"] = "error"
-                    j["result"] = results
+                        if results["errors"] == 0 and results["blocked"] == 0:
+                            j["status"] = "sent"
+                        elif results["success"] > 0:
+                            j["status"] = "partial"
+                        else:
+                            j["status"] = "error"
+                        j["result"] = results
                     break
             self._save_jobs_to_disk(jobs)
             self._load_configured_set()
@@ -1367,6 +1700,25 @@ QTabBar::tab:hover {{
 
         run_in_thread(_do, _on_done, _on_error)
 
+    def _compute_next_run(self, scheduled_for: datetime, repeat: dict) -> datetime | None:
+        t = repeat.get("type", "none")
+        if t == "hourly":
+            return scheduled_for + timedelta(hours=repeat.get("interval", 1))
+        elif t == "daily":
+            return scheduled_for + timedelta(days=1)
+        elif t == "weekly":
+            days = repeat.get("days", [])
+            if not days:
+                return scheduled_for + timedelta(days=7)
+            current_weekday = scheduled_for.weekday()
+            for d in sorted(days):
+                if d > current_weekday:
+                    return scheduled_for + timedelta(days=d - current_weekday)
+            return scheduled_for + timedelta(days=(7 - current_weekday + days[0]))
+        elif t == "monthly":
+            return scheduled_for + timedelta(days=30)
+        return None
+
     # ================== FILTER / PAGINATION ==================
 
     def _filtrar(self, keep_page: bool = False):
@@ -1376,6 +1728,14 @@ QTabBar::tab:hover {{
 
         data_ini = self.dt_ini.date().toString("yyyy-MM-dd")
         data_fim = self.dt_fim.date().toString("yyyy-MM-dd")
+        from datetime import date as _date
+        qdi = _date.fromisoformat(data_ini)
+        qdf = _date.fromisoformat(data_fim)
+        if (qdf - qdi).days > 365*3:
+            show_error(self, "Limite excedido", "O período entre as datas não pode ultrapassar 3 anos.")
+            self.btn_filtrar.setEnabled(True)
+            self.btn_filtrar.setText("Filtrar")
+            return
         empresa = self.user.get("eco_empresa", "01")
 
         sql = COBRANCA_SQL.format(
@@ -1478,7 +1838,7 @@ QTabBar::tab:hover {{
 
     def _update_hidden_label(self, count: int):
         t = theme_manager.current()
-        self.lbl_configured_hidden.setText(f"{count} cliente(s) oculto(s)")
+        self.lbl_configured_hidden.setText(f"{count} cliente(s) agendado(s)")
         if count > 0:
             self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.accent_blue}; text-decoration: underline;")
         else:
@@ -1495,7 +1855,7 @@ QTabBar::tab:hover {{
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton, QLabel
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Clientes Ocultos")
+        dlg.setWindowTitle("Clientes Agendados")
         dlg.resize(600, 400)
         dlg.setStyleSheet(f"""
             QDialog {{ background-color: {t.bg}; color: {t.text}; }}
@@ -1517,7 +1877,7 @@ QTabBar::tab:hover {{
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        table.horizontalHeader().resizeSection(3, 90)
+        table.horizontalHeader().resizeSection(3, 120)
         table.horizontalHeader().setStretchLastSection(False)
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(32)
@@ -1529,6 +1889,7 @@ QTabBar::tab:hover {{
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
                 border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
         """)
+        table.setSortingEnabled(True)
 
         for i, r in enumerate(self._hidden_clients_data):
             row = table.rowCount()
@@ -1538,19 +1899,16 @@ QTabBar::tab:hover {{
             cel = str(r[5]).strip() if r[5] else "-"
             table.setItem(row, 2, QTableWidgetItem(cel))
 
-            container_w = QWidget()
-            container_l = QHBoxLayout(container_w)
-            container_l.setContentsMargins(2, 1, 2, 1)
             btn_remover = QPushButton("Remover")
+            btn_remover.setFixedWidth(70)
             btn_remover.setStyleSheet(f"""
                 QPushButton {{ background: transparent; border: 1px solid {t.danger};
-                    border-radius: 3px; color: {t.danger}; padding: 2px 6px;
-                    font-size: 10px; font-weight: 600; }}
+                    border-radius: 3px; color: {t.danger}; padding: 1px 4px;
+                    font-size: 9px; font-weight: 600; }}
                 QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
             """)
             btn_remover.clicked.connect(lambda checked, idx=i: self._remove_hidden_client(idx, dlg, table))
-            container_l.addWidget(btn_remover)
-            table.setCellWidget(row, 3, container_w)
+            table.setCellWidget(row, 3, btn_remover)
 
         layout.addWidget(table, 1)
 
@@ -1575,8 +1933,8 @@ QTabBar::tab:hover {{
             return
         r = self._hidden_clients_data[idx]
         name = str(r[3]) if r[3] else "desconhecido"
-        if not show_confirm(self, "Remover Cliente Oculto",
-                           f"Tem certeza que deseja remover \"{name}\" dos clientes ocultos?\n\n"
+        if not show_confirm(self, "Remover Cliente Agendado",
+                           f"Tem certeza que deseja remover \"{name}\" dos clientes agendados?\n\n"
                            f"Ele voltara a aparecer na listagem e podera receber mensagens novamente."):
             return
         key = (str(r[0]), str(r[2]))
@@ -1664,7 +2022,7 @@ QTabBar::tab:hover {{
                     remaining = sent_info.get("remaining_hours", 0)
 
                     env_item = QTableWidgetItem("Sim" if ja_enviado else "Não")
-                    env_item.setForeground(QColor(t.danger) if ja_enviado else QColor(t.success))
+                    env_item.setForeground(QColor(t.success) if ja_enviado else QColor(t.danger))
                     self.table.setItem(row, 7, env_item)
 
                     if ja_enviado and remaining > 0:
@@ -1711,13 +2069,12 @@ QTabBar::tab:hover {{
         else:
             self._selected_rows.discard(idx)
         self._update_selected_count()
-        self._update_preview()
 
     def _update_selected_count(self):
         count = len(self._selected_rows)
         self.lbl_selected_count.setText(f"{count} cliente{'s' if count != 1 else ''}")
         self.btn_enviar.setEnabled(count > 0 and self.cmb_template.currentData() is not None)
-        self.btn_configurar.setEnabled(count > 0 and self.cmb_template.currentData() is not None)
+        self.btn_agendar.setEnabled(count > 0 and self.cmb_template.currentData() is not None)
         self.btn_cancelar.setEnabled(count > 0)
 
     def _cancelar_selecao(self):
@@ -1727,25 +2084,193 @@ QTabBar::tab:hover {{
             if item:
                 item.setCheckState(Qt.Unchecked)
         self._update_selected_count()
-        self._update_preview()
 
     # ================== PREVIEW ==================
 
-    def _update_preview(self):
+    def _open_preview_dialog(self):
         template_data = self.cmb_template.currentData()
-        if not template_data or not self._selected_rows:
-            self.preview_text.clear()
+        if not template_data:
             return
 
-        first_idx = min(self._selected_rows)
-        if first_idx >= len(self._results_data):
-            self.preview_text.clear()
+        row_idx = self.table.currentRow()
+        if row_idx < 0 or row_idx >= len(self._results_data):
             return
 
-        row = self._results_data[first_idx]
+        row = self._results_data[row_idx]
         body = template_data.get("body", "")
         substituted = self._substitute_placeholders(body, row)
-        self.preview_text.setPlainText(substituted)
+        t = theme_manager.current()
+
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTabWidget, QTextEdit
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Prévia do Envio")
+        dlg.resize(520, 420)
+        dlg.setStyleSheet(f"""
+            QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+            QTabWidget::pane {{ background: {t.bg}; border: none; }}
+            QTabBar::tab {{ background: transparent; color: {t.text_secondary};
+                padding: 8px 20px; font-size: 13px; font-weight: 600;
+                border: none; border-bottom: 2px solid transparent; }}
+            QTabBar::tab:selected {{ color: {t.text}; border-bottom: 2px solid {t.primary}; }}
+            QTabBar::tab:hover {{ color: {t.text}; }}
+        """)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        tabs = QTabWidget()
+
+        # ── Visual tab ──
+        visual_container = QWidget()
+        visual_container.setStyleSheet(f"background: {t.bg}; border: none;")
+        visual_layout = QVBoxLayout(visual_container)
+        visual_layout.setContentsMargins(0, 0, 0, 0)
+        visual_layout.setSpacing(0)
+
+        phone = str(row[5]).strip() if row[5] else "-"
+        nome = str(row[3]) if row[3] else "-"
+        valor = self._format_valor(row[20]) if len(row) > 20 else "-"
+        venc = self._format_date(row[17]) if len(row) > 17 else "-"
+
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; }}
+            QFrame * {{ background: transparent; }}
+        """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 14, 16, 14)
+        card_layout.setSpacing(8)
+
+        lbl_phone = QLabel(f"📱  Para:  {phone}")
+        lbl_phone.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t.text}; border: none;")
+        card_layout.addWidget(lbl_phone)
+
+        lbl_nome = QLabel(f"👤  Cliente:  {nome}")
+        lbl_nome.setStyleSheet(f"font-size: 13px; color: {t.text}; border: none;")
+        card_layout.addWidget(lbl_nome)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background: transparent; border: none; border-top: 1px solid {t.border};")
+        card_layout.addWidget(sep)
+
+        grid_w = QWidget()
+        grid_w.setStyleSheet("background: transparent; border: none;")
+        grid = QHBoxLayout(grid_w)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(24)
+
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
+        left_col.addWidget(self._visual_field("💰 Valor:", valor, t))
+        left_col.addWidget(self._visual_field("📅 Vencimento:", venc, t))
+        grid.addLayout(left_col)
+
+        if len(row) > 15 and row[15] is not None:
+            right_col = QVBoxLayout()
+            right_col.setSpacing(6)
+            right_col.addWidget(self._visual_field("⏱  Atraso:", f"{row[15]} dia(s)", t))
+            if len(row) > 24 and row[24] is not None:
+                right_col.addWidget(self._visual_field("📊 Juros:", self._format_valor(row[24]), t))
+            grid.addLayout(right_col)
+
+        card_layout.addWidget(grid_w)
+
+        try:
+            parsed = json.loads(substituted)
+            actions = parsed.get("actions", [])
+            fields = [a for a in actions if a.get("action") == "set_field_value"]
+            flow = [a for a in actions if a.get("action") == "send_flow"]
+
+            if fields:
+                sep2 = QFrame()
+                sep2.setFrameShape(QFrame.HLine)
+                sep2.setStyleSheet(f"background: transparent; border: none; border-top: 1px solid {t.border};")
+                card_layout.addWidget(sep2)
+
+                lbl_f = QLabel("Campos que serão preenchidos:")
+                lbl_f.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
+                card_layout.addWidget(lbl_f)
+
+                field_labels = {
+                    "nome_cliente": "Nome do Cliente",
+                    "valor_cobranca": "Valor da Cobrança",
+                    "data_vencimento": "Data de Vencimento",
+                    "numero_boleto": "Nº do Boleto",
+                    "status_cobranca": "Status da Cobrança",
+                }
+
+                for f in fields:
+                    fn = f.get("field_name", "")
+                    fv = f.get("value", "")
+                    label = field_labels.get(fn, fn.replace("_", " ").title())
+                    card_layout.addWidget(self._visual_field(f"• {label}:", fv, t))
+
+            if flow:
+                sep3 = QFrame()
+                sep3.setFrameShape(QFrame.HLine)
+                sep3.setStyleSheet(f"background: transparent; border: none; border-top: 1px solid {t.border};")
+                card_layout.addWidget(sep3)
+
+                flow_id = flow[0].get("flow_id", "")
+                lbl_flow = QLabel(f"🚀 Fluxo: #{flow_id}")
+                lbl_flow.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {t.accent_blue}; border: none; background: transparent;")
+                card_layout.addWidget(lbl_flow)
+        except json.JSONDecodeError:
+            pass
+
+        visual_layout.addWidget(card)
+        visual_layout.addStretch()
+        tabs.addTab(visual_container, "Visual")
+
+        # ── JSON tab ──
+        json_edit = QTextEdit()
+        json_edit.setReadOnly(True)
+        json_edit.setPlainText(substituted)
+        json_edit.setStyleSheet(f"""
+            QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 8px; color: {t.text};
+                font-size: 11px; font-family: Consolas, monospace; }}
+        """)
+        tabs.addTab(json_edit, "JSON")
+
+        layout.addWidget(tabs, 1)
+
+        btn_fechar = QPushButton("Fechar")
+        btn_fechar.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
+                border-radius: 6px; color: {t.text}; padding: 8px 20px;
+                font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.border}; }}
+        """)
+        btn_fechar.clicked.connect(dlg.accept)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(btn_fechar)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _visual_field(self, label: str, value: str, t) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet("border: none;")
+        layout = QHBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600; border: none;")
+        layout.addWidget(lbl)
+
+        val = QLabel(value)
+        val.setStyleSheet(f"font-size: 11px; color: {t.text}; font-weight: 700; border: none;")
+        layout.addWidget(val)
+
+        layout.addStretch()
+        return w
 
     # ================== SEND ==================
 
@@ -1805,13 +2330,21 @@ QTabBar::tab:hover {{
                             resp = client.delete(url, headers=headers, content=body)
                         else:
                             resp = client.post(url, headers=headers, content=body)
-                        if resp.status_code < 300:
+                        success = resp.status_code < 300
+                        if success:
                             results["success"] += 1
-                            self._record_sent(phone, tag)
-                            results["details"].append({"idx": idx, "ok": True, "status": resp.status_code})
                         else:
                             results["errors"] += 1
-                            results["details"].append({"idx": idx, "ok": False, "status": resp.status_code, "body": resp.text[:200]})
+                        results["details"].append({"idx": idx, "ok": success, "status": resp.status_code, "body" if not success else "": resp.text[:200] if not success else ""})
+                        client_name = str(row[3]) if row[3] else ""
+                        self._record_sent(phone, tag,
+                            client_name=client_name,
+                            template_name=template_data.get("name", ""),
+                            body=body,
+                            url=url,
+                            method=method,
+                            status_code=resp.status_code,
+                            success=success)
                     except Exception as e:
                         results["errors"] += 1
                         results["details"].append({"idx": idx, "ok": False, "error": str(e)})
@@ -1822,7 +2355,7 @@ QTabBar::tab:hover {{
             self.btn_enviar.setText("Enviar Agora")
             parts = [f"{results['success']} de {results['total']} enviados com sucesso."]
             if results["blocked"]:
-                parts.append(f"\n{results['blocked']} bloqueado(s) pelo cooldown da tag '{tag}'.")
+                parts.append(f"\n{results['blocked']} bloqueado(s) pelo intervalo entre disparos da tag '{tag}'.")
             if results["errors"]:
                 parts.append(f"\n{results['errors']} falha(s).")
             msg = "".join(parts)

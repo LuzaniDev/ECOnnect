@@ -15,6 +15,7 @@ class StyledTable(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setShowGrid(False)
+        self.setSortingEnabled(True)
 
     def add_row(self, row_data: list[str], user_data: object = None) -> int:
         row = self.rowCount()

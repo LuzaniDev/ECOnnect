@@ -145,6 +145,7 @@ class SqlVariableManagerDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.setSortingEnabled(True)
         layout.addWidget(self.table)
         self._load()
 

@@ -54,9 +54,11 @@ _ECONNECT_PORT = int(os.getenv("ECONNECT_PORT", "9899"))
 
 def start_server():
     try:
-        from backend.app.main import app
+        _log_raw("Importando backend.app.main...")
+        import backend.app.main
+        _log_raw("backend.app.main importado com sucesso")
         uvicorn.run(
-            app,
+            backend.app.main.app,
             host="127.0.0.1",
             port=_ECONNECT_PORT,
             log_level="warning",
@@ -65,7 +67,11 @@ def start_server():
         )
     except Exception as e:
         _log_raw(f"Falha ao iniciar servidor backend: {e}", "ERROR")
-        _log_raw(traceback.format_exc(), "ERROR")
+        try:
+            import traceback as _tb
+            _log_raw(_tb.format_exc(), "ERROR")
+        except Exception:
+            pass
 
 
 def wait_for_server(timeout: int = 120) -> bool:
@@ -150,15 +156,17 @@ def main():
         if not wait_for_server():
             logger.error("Servidor backend não iniciou a tempo")
             app = _create_app_instance()
-            msg = QMessageBox.critical(
-                None,
-                "Erro de inicialização",
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Erro de inicialização")
+            msg.setText(
                 "Não foi possível iniciar o servidor backend.\n"
-                "Verifique se o PostgreSQL está rodando na rede.",
+                "Verifique se o PostgreSQL está rodando na rede."
             )
             msg.setWindowFlags(msg.windowFlags() | Qt.WindowStaysOnTopHint)
             msg.raise_()
             msg.activateWindow()
+            msg.exec()
             sys.exit(1)
 
         logger.info("Servidor backend pronto!")

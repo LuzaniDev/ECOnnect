@@ -1,6 +1,6 @@
 @echo off
 title ECOnnect
-cd /d "C:\Users\Suporte\Documents\Projetos ECO\ECOnnect"
+cd /d "C:\Users\Suportee\Documents\Projetos ECO\ECOnnect"
 
 set PORT=9899
 

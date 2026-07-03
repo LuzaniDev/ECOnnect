@@ -79,7 +79,7 @@ def wait_for_server(timeout: int = 120) -> bool:
 
     for i in range(timeout):
         try:
-            resp = httpx.get(f"http://127.0.0.1:{_ECONNECT_PORT}/health", timeout=2)
+            resp = httpx.get(f"http://127.0.0.1:{_ECONNECT_PORT}/health", timeout=5)
             if resp.status_code == 200:
                 return True
         except Exception:

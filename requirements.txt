@@ -17,6 +17,7 @@ email-validator>=2.0.0
 PySide6>=6.10
 httpx>=0.28.0
 fdb>=2.0.0
+PyMuPDF>=1.28.0
 
 # Build
 pyinstaller>=6.0.0

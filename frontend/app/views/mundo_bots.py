@@ -2,29 +2,67 @@ import json
 import os
 import httpx
 import uuid
-import time
 import concurrent.futures
 from datetime import datetime, date, timedelta
-from PySide6.QtCore import Qt, QDate, QTimer, QDateTime, QSize
+from PySide6.QtCore import Qt, QDate, QTimer, QDateTime, QSize, QPoint
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QCheckBox, QComboBox, QFrame, QScrollArea, QMenu,
+    QCheckBox, QComboBox, QFrame, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QDateEdit, QTextEdit, QLineEdit, QTabWidget,
     QDialog, QDateTimeEdit, QDialogButtonBox, QRadioButton,
-    QAbstractItemView, QApplication,
+    QAbstractItemView, QApplication, QMessageBox,
 )
-from PySide6.QtGui import QAction, QMouseEvent, QIcon, QPixmap, QImage
+from PySide6.QtGui import QIcon, QPixmap, QImage
 
 
-class _CheckableMenu(QMenu):
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        action = self.actionAt(event.pos())
-        if action is not None and action.isCheckable():
-            action.setChecked(not action.isChecked())
-            return
-        super().mouseReleaseEvent(event)
+class _FilterPopup(QDialog):
+    def __init__(self, all_items: list[tuple[str, str]], selected: set[str] | None = None, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            _FilterPopup { background: #1e1e2e; border: 1px solid #3a3a4a; border-radius: 8px; }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(2)
+
+        self._checkboxes = {}
+        for text, data in all_items:
+            if data == "":
+                continue
+            cb = QCheckBox(text)
+            cb.setChecked(data in (selected or set()))
+            cb.setStyleSheet("""
+                QCheckBox { color: #c0c0d0; font-size: 12px; padding: 4px 8px; }
+                QCheckBox:hover { background: rgba(79,172,254,0.15); border-radius: 4px; }
+                QCheckBox::indicator { width: 14px; height: 14px; }
+            """)
+            self._checkboxes[data] = cb
+            layout.addWidget(cb)
+
+        btn_limpar = QPushButton("Limpar filtro")
+        btn_limpar.setStyleSheet("""
+            QPushButton { background: transparent; border: 1px solid #3a3a4a;
+                border-radius: 4px; padding: 4px 12px; color: #e06c75;
+                font-size: 11px; margin-top: 6px; }
+            QPushButton:hover { background: rgba(224,108,117,0.15); }
+        """)
+        btn_limpar.clicked.connect(self._limpar)
+        layout.addWidget(btn_limpar)
+
+    def _limpar(self):
+        for cb in self._checkboxes.values():
+            cb.setChecked(False)
+        self.accept()
+
+    def get_selected(self) -> list[str]:
+        return [data for data, cb in self._checkboxes.items() if cb.isChecked()]
+
+
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.core.logger import logger
@@ -34,75 +72,60 @@ from frontend.app.services.barcode import calcular_codigo_barras, calcular_linha
 
 
 COBRANCA_SQL = """
-WITH
-TReceber AS (
-      SELECT Par.Empresa,
-             Emp.NomeFantasia,
-             Clg.Codigo                                          AS Cliente,
-             Clg.Nome,
-             Clg.CpfCnpj,
-             COALESCE(Clg.Fone, Clg.FoneCelular)                 AS Fone,
-             Clg.Endereco,
-             Clg.NumeroEndereco,
-             Clg.Bairro,
-             Clg.Regiao,
-             Clg.Cidade,
-             COALESCE(Cli.DiasCarenciaJuros, 0)                  AS DiasCarenciaJuros,
-             Doc.IdDocumento,
-             Par.Documento||'/'||Par.Parcela                     AS Documento,
-             Tpd.Abreviatura,
-             CURRENT_DATE -
-         IIF(Par.Vencimento < Par.UltimoRecebimento,
-             Par.UltimoRecebimento, Par.Vencimento)               AS Atrazo,
-             Doc.Emissao,
-             Par.Vencimento,
-             Par.Valor,
-             (Par.Valor - Par.ValorPendente)                     AS CapitalRecebido,
-             Par.ValorPendente,
-             Pmt.Multa,
-             COALESCE(NULLIF(Cli.JurosAtraso, 0), Pmt.Juros)     AS Juros,
-             Pmt.TipoJuro,
-             Par.IDTRECPARCELA,
-             Par.PORTADOR,
-             Par.PARCELA                                                AS Parcela,
-             Bol.NOSSONUMERO                                            AS NossoNumero,
-             Bol.NUMEROBOLETO                                           AS NumeroBoleto
-        FROM TRecDocumento          Doc
-       INNER JOIN TRecParcela       Par
-          ON Par.Empresa   = Doc.Empresa
-         AND Par.Cliente   = Doc.Cliente
-         AND Par.Tipo      = Doc.Tipo
-         AND Par.Documento = Doc.Documento
-       INNER JOIN TRecTipoDocumento Tpd
-          ON Tpd.Codigo    = Par.Tipo
-         AND COALESCE(Tpd.Cartao, 'N') = 'N'
-       INNER JOIN TRecCliente       Cli
-          ON Cli.Empresa   = Par.Empresa
-         AND Cli.Codigo    = Par.Cliente
-       INNER JOIN TRecClienteGeral  Clg
-          ON Clg.Codigo    = Cli.Codigo
-       INNER JOIN TGerEmpresa       Emp
-          ON Emp.Codigo    = Par.Empresa
-        LEFT JOIN TRecParametro     Pmt
-          ON Pmt.Empresa   = Emp.Codigo
-        LEFT JOIN TRECBOLETO       Bol
-          ON Bol.IDTRECPARCELA = Par.IDTRECPARCELA
-       WHERE Par.Empresa          = ?
-         AND Par.Vencimento BETWEEN ? AND ?
-         AND Par.ValorPendente    > 0
-         AND Par.IdRenegociacao  IS NULL
-         AND Par.Situacao        <> 'A'
-         {tipo_filter}
-)
-
-SELECT Rec.*,
-   IIF(Rec.Atrazo > Rec.DiasCarenciaJuros,
-  CASE Rec.TipoJuro
-  WHEN 'S' THEN Rec.ValorPendente * (Rec.Juros / 100) * Rec.Atrazo
-  WHEN 'C' THEN Rec.ValorPendente * (POWER(1 + (Rec.Juros / 100), Rec.Atrazo) - 1)
-   END, 0)                                   AS ValorJuros,
-       Rec.ValorPendente * (Rec.Multa / 100) AS ValorMulta
-  FROM TReceber Rec
+SELECT {paginacao}
+       Par.Empresa,
+       Emp.NomeFantasia,
+       Clg.Codigo                                          AS Cliente,
+       Clg.Nome,
+       Clg.CpfCnpj,
+       COALESCE(Clg.Fone, Clg.FoneCelular)                 AS Fone,
+       Clg.Endereco,
+       Clg.NumeroEndereco,
+       Clg.Bairro,
+       Clg.Regiao,
+       Clg.Cidade,
+       COALESCE(Cli.DiasCarenciaJuros, 0)                  AS DiasCarenciaJuros,
+       Doc.IdDocumento,
+       Par.Documento||'/'||Par.Parcela                     AS Documento,
+       Tpd.Abreviatura,
+       0                                                    AS Atrazo,
+       Doc.Emissao,
+       Par.Vencimento,
+       Par.Valor,
+       (Par.Valor - Par.ValorPendente)                     AS CapitalRecebido,
+       Par.ValorPendente,
+       0                                                    AS Multa,
+       COALESCE(NULLIF(Cli.JurosAtraso, 0), 0)             AS Juros,
+       ''                                                   AS TipoJuro,
+       Par.IDTRECPARCELA,
+       Par.PORTADOR,
+       Par.PARCELA                                          AS Parcela,
+       ''                                                   AS NossoNumero,
+       ''                                                   AS NumeroBoleto,
+       Par.UltimoRecebimento
+  FROM TRecParcela Par
+ INNER JOIN TRecDocumento Doc
+    ON Doc.Empresa   = Par.Empresa
+   AND Doc.Cliente   = Par.Cliente
+   AND Doc.Tipo      = Par.Tipo
+   AND Doc.Documento = Par.Documento
+ INNER JOIN TRecTipoDocumento Tpd
+    ON Tpd.Codigo    = Par.Tipo
+   AND COALESCE(Tpd.Cartao, 'N') = 'N'
+ INNER JOIN TRecCliente Cli
+    ON Cli.Empresa   = Par.Empresa
+   AND Cli.Codigo    = Par.Cliente
+ INNER JOIN TRecClienteGeral Clg
+    ON Clg.Codigo    = Cli.Codigo
+ INNER JOIN TGerEmpresa Emp
+    ON Emp.Codigo    = Par.Empresa
+ WHERE Par.Empresa          = ?
+   AND Par.Vencimento BETWEEN ? AND ?
+   AND Par.ValorPendente    > 0
+   AND Par.IdRenegociacao  IS NULL
+   AND Par.Situacao        <> 'A'
+   {tipo_filter}
+ ORDER BY Par.Vencimento DESC
 """
 
 VARS_INFO = [
@@ -115,8 +138,8 @@ VARS_INFO = [
     ("valor_cobranca",      "{valor_cobranca}", 20, "ValorPendente",  "Valor pendente (R$)"),
     ("valor_total",         "{valor_total}", 18, "Valor",             "Valor original do documento (R$)"),
     ("capital_recebido",    "{capital_recebido}", 19, "CapitalRecebido","Capital já recebido (R$)"),
-    ("valor_juros",         "{valor_juros}", 29, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
-    ("valor_multa",         "{valor_multa}", 30, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
+    ("valor_juros",         "{valor_juros}", 30, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
+    ("valor_multa",         "{valor_multa}", 31, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
     ("codigo_barras",       "{codigo_barras}", 999, "Calculado", "Código de barras de 44 dígitos (calculado automaticamente)"),
     ("linha_digitavel",     "{linha_digitavel}", 999, "Calculado", "Linha digitável de 47 dígitos (calculada a partir do código de barras)"),
     ("numero_boleto / num_boleto", "{numero_boleto}", 28, "NumeroBoleto", "Número do boleto"),
@@ -310,6 +333,19 @@ QTabBar::tab:hover {{
         self.dt_fim.setDate(QDate.currentDate())
         self.dt_fim.setStyleSheet(self.dt_ini.styleSheet())
         date_row.addWidget(self.dt_fim)
+        self.btn_12m = QPushButton("12 meses")
+        self.btn_12m.setCursor(Qt.PointingHandCursor)
+        self.btn_12m.setStyleSheet(f"""
+            QPushButton {{ background: {t.surface}; border: 1px solid {t.border};
+                border-radius: 4px; padding: 6px 12px; color: {t.primary};
+                font-size: 11px; font-weight: 600; }}
+            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.15); }}
+        """)
+        self.btn_12m.clicked.connect(lambda: (
+            self.dt_ini.setDate(QDate.currentDate().addYears(-1)),
+            self.dt_fim.setDate(QDate.currentDate()),
+        ))
+        date_row.addWidget(self.btn_12m)
         date_row.addStretch()
         filter_layout.addLayout(date_row)
 
@@ -336,49 +372,36 @@ QTabBar::tab:hover {{
                 border-radius: 4px; padding: 6px; color: {t.text};
                 font-size: 12px; text-align: left; }}
             QPushButton:hover {{ border-color: {t.primary}; }}
-            QPushButton::menu-indicator {{ subcontrol-position: right center; padding-right: 4px; }}
-        """
-        menu_style = f"""
-            QMenu {{ background: {t.surface}; border: 1px solid {t.border}; padding: 4px; }}
-            QMenu::item {{ padding: 6px 24px; font-size: 12px; color: {t.text}; }}
-            QMenu::item:selected {{ background: rgba({_hex_to_rgb(t.primary)},0.2); }}
-            QMenu::indicator {{ width: 14px; height: 14px; }}
         """
 
-        def _build_filter_menu(btn, all_items):
-            menu = _CheckableMenu()
-            menu.setStyleSheet(menu_style)
-            btn.setMenu(menu)
-            for text, data in all_items:
-                a = QAction(text)
-                a.setData(data)
-                if data == "":
-                    a.setCheckable(False)
-                    a.triggered.connect(lambda: _reset_menu(btn, menu))
-                else:
-                    a.setCheckable(True)
-                    a.toggled.connect(lambda _, m=menu, b=btn: _update_label(b, m))
-                menu.addAction(a)
-            return menu
+        self._tipo_pessoa_selected = set()
+        self._tipo_cliente_selected = set()
 
-        def _reset_menu(btn, menu):
-            for a in menu.actions():
-                if a.data() != "":
-                    a.setChecked(False)
-            btn.setText("Todos")
+        def _show_popup(btn, all_items, store_attr):
+            popup = _FilterPopup(all_items, selected=getattr(self, store_attr))
+            pos = btn.mapToGlobal(QPoint(0, btn.height()))
+            popup.setGeometry(pos.x(), pos.y(), 220, min(40 * len(all_items) + 20, 400))
 
-        def _update_label(btn, menu):
-            checked = [a for a in menu.actions() if a.isChecked() and a.data() != ""]
-            btn.setText(f"{len(checked)} selecionado(s)" if checked else "Todos")
+            def _on_close(result):
+                selected = popup.get_selected()
+                getattr(self, store_attr).clear()
+                getattr(self, store_attr).update(selected)
+                btn.setText(f"{len(selected)} selecionado(s)" if selected else "Todos")
+
+            popup.finished.connect(_on_close)
+            popup.show()
 
         tipo_row.addWidget(QLabel("Tipo Pessoa:"))
         self.btn_tipopessoa = QPushButton("Todos")
         self.btn_tipopessoa.setCursor(Qt.PointingHandCursor)
         self.btn_tipopessoa.setMinimumWidth(140)
         self.btn_tipopessoa.setStyleSheet(btn_style)
-        self.tipo_pessoa_menu = _build_filter_menu(
-            self.btn_tipopessoa,
-            [("Todos", ""), ("Pessoa Física (F)", "F"), ("Pessoa Jurídica (J)", "J"), ("Produtor Rural (P)", "P")],
+        self.btn_tipopessoa.clicked.connect(
+            lambda: _show_popup(
+                self.btn_tipopessoa,
+                [("Pessoa Física (F)", "F"), ("Pessoa Jurídica (J)", "J"), ("Produtor Rural (P)", "P")],
+                "_tipo_pessoa_selected",
+            )
         )
         tipo_row.addWidget(self.btn_tipopessoa)
 
@@ -388,7 +411,11 @@ QTabBar::tab:hover {{
         self.btn_tipocliente.setMinimumWidth(200)
         self.btn_tipocliente.setStyleSheet(btn_style)
         tipo_cliente_items = self._load_tipo_cliente_options()
-        self.tipo_cliente_menu = _build_filter_menu(self.btn_tipocliente, tipo_cliente_items)
+        self.btn_tipocliente.clicked.connect(
+            lambda: _show_popup(
+                self.btn_tipocliente, tipo_cliente_items, "_tipo_cliente_selected",
+            )
+        )
         tipo_row.addWidget(self.btn_tipocliente)
 
         tipo_row.addStretch()
@@ -495,10 +522,10 @@ QTabBar::tab:hover {{
         sel_header.addStretch()
         actions_layout.addLayout(sel_header)
 
-        # ── Ver Boletos ──
+        # ── Ver Pendencias ──
         boletos_row = QHBoxLayout()
         boletos_row.setSpacing(8)
-        self.btn_ver_boletos = QPushButton("Ver Boletos")
+        self.btn_ver_boletos = QPushButton("Ver Pendências")
         self.btn_ver_boletos.setCursor(Qt.PointingHandCursor)
         self.btn_ver_boletos.setStyleSheet(f"""
             QPushButton {{ background: {t.accent_blue}; color: {t.selection_text}; border: none;
@@ -1880,24 +1907,37 @@ QTabBar::tab:hover {{
         filtros = []
         nome_cliente = self.txt_nome_cliente.text().strip()
         if nome_cliente:
-            filtros.append(f"AND Clg.Nome CONTAINING '{nome_cliente.replace(chr(39), chr(39)+chr(39))}'")
-        selected_pessoa = []
-        for action in self.tipo_pessoa_menu.actions():
-            if action.isChecked() and action.data():
-                selected_pessoa.append(action.data())
+            logger.info("QUERY", f"Filtro nome: {nome_cliente!r} (>=3 caracteres: {len(nome_cliente) >= 3})")
+        if nome_cliente:
+            safe = nome_cliente.replace(chr(39), chr(39)+chr(39))
+            if len(nome_cliente) >= 3:
+                filtros.append(f"AND Clg.Nome STARTING WITH '{safe}'")
+            else:
+                filtros.append(f"AND Clg.Nome CONTAINING '{safe}'")
+        selected_pessoa = list(self._tipo_pessoa_selected)
         if selected_pessoa:
             pess_str = ",".join(f"'{p}'" for p in selected_pessoa)
             filtros.append(f"AND Clg.PESSOA IN ({pess_str})")
-        selected_tipos = []
-        for action in self.tipo_cliente_menu.actions():
-            if action.isChecked() and action.data():
-                selected_tipos.append(action.data())
+        selected_tipos = list(self._tipo_cliente_selected)
         if selected_tipos:
             tipos_str = ",".join(f"'{t}'" for t in selected_tipos)
             filtros.append(f"AND Clg.TIPOCLIENTE IN ({tipos_str})")
 
+        pag_sql = ""
+        pag_params: tuple = ()
+        if self._page_size > 0:
+            pag_sql = "FIRST ? SKIP ?"
+            pag_params = (self._page_size, self._page * self._page_size)
+
+        params = pag_params + (empresa, data_ini, data_fim)
+        logger.info("QUERY", f"Filtrando: empresa={empresa!r}, datas={data_ini} a {data_fim}, "
+                             f"cliente={nome_cliente or '(vazio)'}, "
+                             f"pessoa={selected_pessoa}, tipo_cliente={selected_tipos}, "
+                             f"rota={self._page}")
+
         sql = COBRANCA_SQL.format(
             tipo_filter=" ".join(filtros),
+            paginacao=pag_sql,
         )
 
         self.btn_filtrar.setEnabled(False)
@@ -1906,11 +1946,10 @@ QTabBar::tab:hover {{
         self.table.setRowCount(0)
 
         def _do_query():
-            logger.info("QUERY", "Iniciando consulta Firebird...",
-                        data_ini=data_ini, data_fim=data_fim)
+            logger.info("QUERY", f"Iniciando consulta Firebird: empresa={empresa!r}, "
+                                 f"datas={data_ini} a {data_fim}, filtros={len(filtros)}")
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             try:
-                params = (empresa, data_ini, data_fim)
                 futuro = executor.submit(fb.query, sql, params)
                 rows = futuro.result(timeout=120)
                 logger.info("QUERY", f"Consulta concluida: {len(rows)} linhas")
@@ -1932,7 +1971,38 @@ QTabBar::tab:hover {{
                 self.lbl_loading.setText("Carregado")
                 self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600;")
 
-                filtered = list(rows)
+                from datetime import date as _calc_date
+                today = _calc_date.today()
+                filtered = []
+                for r in rows:
+                    rl = list(r)
+                    venc = rl[17]
+                    ult_rec = rl[29]
+                    atrazo_val = 0
+                    if venc:
+                        if ult_rec and venc < ult_rec:
+                            atrazo_val = (today - ult_rec).days
+                        else:
+                            atrazo_val = (today - venc).days
+                        rl[15] = max(atrazo_val, 0)
+                    pendente = float(rl[20] or 0)
+                    multa_val = float(rl[21] or 0)
+                    juros_val = float(rl[22] or 0)
+                    tipo_juro = str(rl[23] or "")
+                    dias_carencia = float(rl[11] or 0)
+                    if atrazo_val > dias_carencia and pendente and juros_val:
+                        if tipo_juro == 'S':
+                            vj = pendente * (juros_val / 100.0) * atrazo_val
+                        elif tipo_juro == 'C':
+                            vj = pendente * (pow(1 + (juros_val / 100.0), atrazo_val) - 1)
+                        else:
+                            vj = 0
+                    else:
+                        vj = 0
+                    vm = pendente * (multa_val / 100.0) if pendente else 0
+                    rl.append(vj)
+                    rl.append(vm)
+                    filtered.append(tuple(rl))
                 self._hidden_clients_data = []
                 hidden_count = 0
                 seen_hidden = set()
@@ -1946,7 +2016,7 @@ QTabBar::tab:hover {{
                 self._results_data = filtered
                 self._selected_rows.clear()
                 self._update_selected_count()
-                self._has_more = False
+                self._has_more = len(filtered) >= self._page_size
 
                 self._update_hidden_label(hidden_count)
                 self._update_page_info()
@@ -1955,6 +2025,7 @@ QTabBar::tab:hover {{
                     if hidden_count:
                         show_error(self, "Sem Resultados", "Todos os resultados desta página já foram configurados. Avance para a próxima página ou ajuste os filtros.")
                     else:
+                        logger.info("QUERY", f"Sem resultados: empresa={empresa!r}, datas={data_ini} a {data_fim}")
                         show_error(self, "Sem Resultados", "Nenhum cliente encontrado com os filtros atuais.")
                     self.table.setRowCount(0)
                     return
@@ -1998,8 +2069,8 @@ QTabBar::tab:hover {{
             self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
 
     def _update_page_info(self):
-        self.btn_prev.setEnabled(False)
-        self.btn_next.setEnabled(False)
+        self.btn_prev.setEnabled(self._page > 0)
+        self.btn_next.setEnabled(self._has_more)
 
     def _show_hidden_clients_dialog(self):
         t = theme_manager.current()
@@ -2416,7 +2487,30 @@ QTabBar::tab:hover {{
         # ── Boleto tab (só se tiver código de barras) ──
         bc_preview = self._calcular_barcode(row)
         ld_preview = calcular_linha_digitavel(bc_preview) if bc_preview else ""
+
+        pdf_caminho = ""
         if bc_preview:
+            try:
+                id_parcela = row[24]
+                from frontend.app.core.firebird_client import FirebirdClient
+                fbc = FirebirdClient()
+                fbc.conectar()
+                r = fbc.query(
+                    "SELECT CAMINHOPDF FROM BOLETO_GERADO "
+                    "WHERE IDPARCELA = ?",
+                    (id_parcela,),
+                )
+                fbc.fechar()
+                if r and r[0][0]:
+                    pdf_caminho = r[0][0]
+            except Exception:
+                pass
+
+        if bc_preview:
+            copy_svg_clip = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
+            _ci = QImage.fromData(copy_svg_clip.encode(), "SVG")
+            _copy_icon = QIcon(QPixmap.fromImage(_ci))
+
             boleto_container = QWidget()
             boleto_container.setStyleSheet(f"background: {t.bg}; border: none;")
             boleto_layout = QVBoxLayout(boleto_container)
@@ -2433,7 +2527,8 @@ QTabBar::tab:hover {{
                 val = QLabel(valor)
                 val.setStyleSheet(f"font-size: 13px; color: {t_obj.text}; border: none; background: transparent; font-family: Consolas, monospace;")
                 val.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                btn = QPushButton("📋 Copiar")
+                btn = QPushButton(_copy_icon, "Copiar")
+                btn.setIconSize(QSize(14, 14))
                 btn.setStyleSheet(f"QPushButton {{ background: {t_obj.primary}; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: 11px; }} QPushButton:hover {{ opacity: 0.8; }}")
                 btn.clicked.connect(lambda _, v=valor: QApplication.clipboard().setText(v))
                 lo.addWidget(lbl, 0)
@@ -2441,8 +2536,24 @@ QTabBar::tab:hover {{
                 lo.addWidget(btn, 0)
                 return w
 
-            boleto_layout.addWidget(_make_copy_row("📄 Código de Barras", bc_preview, t))
-            boleto_layout.addWidget(_make_copy_row("📝 Linha Digitável", ld_preview, t))
+            boleto_layout.addWidget(_make_copy_row("C\u00f3digo de Barras", bc_preview, t))
+            boleto_layout.addWidget(_make_copy_row("Linha Digit\u00e1vel", ld_preview, t))
+
+            if pdf_caminho:
+                import os as _os
+                pdf_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>"""
+                _pi = QImage.fromData(pdf_svg.encode(), "SVG")
+                _pdf_icon = QIcon(QPixmap.fromImage(_pi))
+                btn_pdf = QPushButton(_pdf_icon, " Abrir PDF")
+                btn_pdf.setIconSize(QSize(18, 18))
+                btn_pdf.setCursor(Qt.PointingHandCursor)
+                btn_pdf.setStyleSheet(f"""
+                    QPushButton {{ background: {t.danger}; color: #fff; border: none;
+                        border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; }}
+                    QPushButton:hover {{ opacity: 0.85; }}
+                """)
+                btn_pdf.clicked.connect(lambda: _os.startfile(pdf_caminho))
+                boleto_layout.addWidget(btn_pdf)
 
             boleto_layout.addStretch()
             tabs.addTab(boleto_container, "Boleto")
@@ -2487,12 +2598,12 @@ QTabBar::tab:hover {{
 
     def _open_boletos_dialog(self):
         if not self._results_data:
-            show_error(self, "Aviso", "Nenhum cliente carregado. Faça uma pesquisa primeiro.")
+            show_error(self, "Aviso", "Nenhum cliente carregado. Faca uma pesquisa primeiro.")
             return
 
         selected = sorted(self._selected_rows)
         if not selected:
-            show_error(self, "Aviso", "Marque um cliente na tabela para ver os boletos.")
+            show_error(self, "Aviso", "Marque um cliente na tabela para ver as pendencias.")
             return
 
         row_idx = selected[0]
@@ -2503,18 +2614,21 @@ QTabBar::tab:hover {{
         cliente = str(row[2]) if row[2] else None
         empresa = str(row[0]) if row[0] else "01"
         if not cliente:
-            show_error(self, "Erro", "Cliente sem código.")
+            show_error(self, "Erro", "Cliente sem codigo.")
             return
 
         sql = """
-        SELECT Bol.NUMEROBOLETO, Bol.NOSSONUMERO, Bol.DTVENCIMENTO,
-               Bol.VALORBOLETO, Bol.STATUS, Par.DOCUMENTO, Par.PARCELA,
-               Par.PORTADOR
-        FROM TRECBOLETO Bol
-        JOIN TRECPARCELA Par ON Par.IDTRECPARCELA = Bol.IDTRECPARCELA
-        WHERE Bol.EMPRESA = ? AND Bol.IDCLIENTE = ?
-          AND Bol.STATUS NOT IN ('B', 'C')
-        ORDER BY Bol.DTVENCIMENTO DESC
+        SELECT Par.Documento, Par.Parcela, Par.Vencimento, Par.ValorPendente,
+               Par.Valor, Par.Situacao, Cob.NomeCarteira, Tpd.Abreviatura
+        FROM TRecParcela Par
+        LEFT JOIN TRecTipoDocumento Tpd ON Tpd.Codigo = Par.Tipo
+        LEFT JOIN TCOBPARAMETROECOBRANCA Cob
+            ON Cob.Empresa = Par.Empresa AND Cob.Portador = Par.PORTADOR
+        WHERE Par.Empresa = ? AND Par.Cliente = ?
+          AND Par.ValorPendente > 0
+          AND Par.IdRenegociacao IS NULL
+          AND Par.Situacao <> 'P'
+        ORDER BY Par.Vencimento DESC
         """
         t = theme_manager.current()
 
@@ -2522,13 +2636,16 @@ QTabBar::tab:hover {{
             try:
                 return fb.query(sql, (empresa, cliente))
             except Exception as e:
-                logger.error("BOLETOS", f"Erro: {e}")
+                logger.error("PENDENCIAS", f"Erro: {e}")
                 raise
 
         def _on_result(rows):
+            from datetime import date as _dt
+            hoje = _dt.today()
+
             dlg = QDialog(self)
-            dlg.setWindowTitle(f"Boletos do Cliente {cliente}")
-            dlg.resize(700, 450)
+            dlg.setWindowTitle(f"Pendencias do Cliente {cliente}")
+            dlg.resize(850, 500)
             dlg.setStyleSheet(f"""
                 QDialog {{ background-color: {t.bg}; color: {t.text}; }}
                 QTableWidget {{ background-color: {t.bg}; color: {t.text};
@@ -2541,174 +2658,105 @@ QTabBar::tab:hover {{
             layout.setContentsMargins(16, 16, 16, 16)
             layout.setSpacing(12)
 
-            status_map = {
-                "P": "Pendente",
-                "B": "Baixado",
-                "C": "Cancelado",
-                "D": "Devolvido",
-                "N": "Não Registrado",
-            }
-
             if not rows:
-                lbl = QLabel("Nenhum boleto encontrado para este cliente (excluindo pagos e cancelados).")
+                lbl = QLabel("Nenhuma pendencia encontrada para este cliente.")
                 lbl.setStyleSheet(f"font-size: 13px; color: {t.text_secondary};")
                 layout.addWidget(lbl)
             else:
                 table = QTableWidget()
-                table.setColumnCount(9)
+                table.setColumnCount(8)
                 table.setHorizontalHeaderLabels([
-                    "Documento", "Parcela", "Vencimento", "Valor", "Situação",
-                    "Nosso Número", "Código Barras", "Linha Digitável", "Banco",
+                    "Documento", "Parcela", "Vencimento", "Valor Pendente",
+                    "Valor Total", "Dias", "Status", "Tipo",
                 ])
-                for c in range(6):
+                for c in range(7):
                     table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-                table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
                 table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
-                table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
                 table.setAlternatingRowColors(True)
                 table.setEditTriggers(QTableWidget.NoEditTriggers)
                 table.verticalHeader().setVisible(False)
-                table.verticalHeader().setDefaultSectionSize(30)
                 table.setRowCount(len(rows))
 
-                clip = QApplication.clipboard()
-
-                copy_svg_data = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
-                _ci = QImage.fromData(copy_svg_data.encode(), "SVG")
-                copy_icon = QIcon(QPixmap.fromImage(_ci))
-
-                copy_btn_style = f"""
-                    QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                        border-radius: 4px; color: {t.text}; padding: 4px 8px;
-                        font-size: 11px; min-width: 60px; }}
-                    QPushButton:hover {{ background: {t.primary}; color: #fff;
-                        border-color: {t.primary}; }}
-                """
-
+                total_pendente = 0
                 for i, r in enumerate(rows):
-                    table.setItem(i, 0, QTableWidgetItem(str(r[5] or "-")))
-                    table.setItem(i, 1, QTableWidgetItem(str(r[6] or "-")))
+                    doc = str(r[0] or "") + "/" + str(r[1] or "")
+                    table.setItem(i, 0, QTableWidgetItem(doc))
+                    table.setItem(i, 1, QTableWidgetItem(str(r[1] or "")))
                     venc = r[2]
-                    if venc:
-                        try:
-                            d = str(venc)[:10]
-                            parts = d.split("-")
-                            venc_str = f"{parts[2]}/{parts[1]}/{parts[0]}"
-                        except Exception:
-                            venc_str = str(venc)[:10]
-                    else:
-                        venc_str = "-"
+                    venc_str = str(venc) if venc else "-"
                     table.setItem(i, 2, QTableWidgetItem(venc_str))
-
-                    valor = r[3]
-                    if valor is not None:
-                        try:
-                            valor_str = f"R$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                        except (ValueError, TypeError):
-                            valor_str = str(valor)
+                    pend = r[3]
+                    if pend is not None:
+                        v = float(pend)
+                        total_pendente += v
+                        table.setItem(i, 3, QTableWidgetItem(f"R$ {v:.2f}"))
                     else:
-                        valor_str = "R$ 0,00"
-                    table.setItem(i, 3, QTableWidgetItem(valor_str))
-
-                    bc = ""
-                    ld = ""
-                    nosso = str(r[1] or "")
-                    portador = str(r[7] or "")
-                    nome_banco = "-"
-                    if nosso and portador:
-                        try:
-                            from frontend.app.core.firebird_client import FirebirdClient
-                            fbc = FirebirdClient()
-                            fbc.conectar()
-                            row_bg = fbc.query(
-                                "SELECT CODIGOBARRAS, LINHADIGITAVEL FROM BOLETO_GERADO "
-                                "WHERE EMPRESA = ? AND PORTADOR = ? AND NOSSONUMERO = ? "
-                                "AND IDPARCELA IS NOT NULL",
-                                (empresa, portador, nosso),
-                            )
-                            fbc.fechar()
-                            if row_bg:
-                                bc, ld = row_bg[0][0], row_bg[0][1]
-                        except Exception:
-                            pass
-
-                    if self._bank_config_cache is None:
-                        self._bank_config_cache = self._load_bank_config()
-                    cfg = self._bank_config_cache.get((empresa, portador))
-                    if cfg:
-                        nome_cart = str(cfg["nome_carteira"] or "")
-                        if "748" in nome_cart:
-                            nome_banco = "Sicredi"
-                        elif "001" in nome_cart:
-                            nome_banco = "Banco do Brasil"
-                        elif "756" in nome_cart:
-                            nome_banco = "Sicoob"
-                        elif "237" in nome_cart:
-                            nome_banco = "Bradesco"
-                        elif "104" in nome_cart:
-                            nome_banco = "Caixa"
-                        elif "341" in nome_cart:
-                            nome_banco = "Ita\u00fa"
-                        else:
-                            nome_banco = nome_cart
-
-                    status_label = status_map.get(str(r[4]).strip().upper(), str(r[4]))
-                    if bc:
-                        status_label = "Registrado"
-                    table.setItem(i, 4, QTableWidgetItem(status_label))
-                    table.setItem(i, 5, QTableWidgetItem(str(r[1] or "-")))
-                    table.setItem(i, 8, QTableWidgetItem(nome_banco))
-
-                    # Coluna 6 - Código de Barras com cópia
-                    def _make_copy_cell(valor: str, tooltip: str):
-                        c = QWidget()
-                        cl = QHBoxLayout(c)
-                        cl.setContentsMargins(6, 4, 6, 4)
-                        cl.setSpacing(6)
-                        lbl = QLabel(valor)
-                        lbl.setStyleSheet(f"font-size: 11px; color: {t.text}; background: transparent;")
-                        lbl.setWordWrap(True)
-                        btn = QPushButton(copy_icon, " Copiar")
-                        btn.setToolTip(tooltip)
-                        btn.setIconSize(QSize(14, 14))
-                        btn.setStyleSheet(copy_btn_style)
-                        btn.clicked.connect(lambda _, v=valor: clip.setText(v))
-                        cl.addWidget(lbl, 1)
-                        cl.addWidget(btn, 0)
-                        return c
-
-                    if bc:
-                        table.setCellWidget(i, 6, _make_copy_cell(bc, "Copiar código de barras"))
+                        table.setItem(i, 3, QTableWidgetItem("-"))
+                    total = r[4]
+                    if total is not None:
+                        table.setItem(i, 4, QTableWidgetItem(f"R$ {float(total):.2f}"))
                     else:
-                        table.setItem(i, 6, QTableWidgetItem("-"))
+                        table.setItem(i, 4, QTableWidgetItem("-"))
 
-                    if ld:
-                        table.setCellWidget(i, 7, _make_copy_cell(ld, "Copiar linha digitável"))
+                    situacao = str(r[5] or "").strip().upper()
+                    atraso = 0
+                    if venc:
+                        atraso = (hoje - venc).days
+                    if situacao == "P":
+                        status_text = "Paga"
+                        status_color = t.success
+                    elif situacao == "C":
+                        status_text = "Cancelada"
+                        status_color = t.text_muted
+                    elif situacao == "B":
+                        status_text = "Baixada (escritural)"
+                        status_color = t.text_muted
+                    elif atraso > 0:
+                        status_text = f"Vencida ({atraso} dia(s))"
+                        status_color = t.danger
+                    elif atraso == 0:
+                        status_text = "Vence hoje"
+                        status_color = t.warning
                     else:
-                        table.setItem(i, 7, QTableWidgetItem("-"))
+                        status_text = f"A vencer ({-atraso} dia(s))"
+                        status_color = t.success
 
-                layout.addWidget(table, 1)
+                    table.setItem(i, 5, QTableWidgetItem(str(atraso) if venc else "-"))
+                    sit_item = QTableWidgetItem(status_text)
+                    sit_item.setForeground(QColor(status_color))
+                    table.setItem(i, 6, sit_item)
+
+                    nome_carteira = str(r[6] or "").strip()
+                    if nome_carteira:
+                        tipo_text = nome_carteira
+                    else:
+                        abrev = str(r[7] or "").strip()
+                        tipo_map = {"DUP": "Duplicata", "CHQ": "Cheque", "BOL": "Boleto",
+                                    "CAR": "Cartao", "NP": "Nota Promissoria", "REC": "Recibo"}
+                        tipo_text = tipo_map.get(abrev, abrev)
+                    table.setItem(i, 7, QTableWidgetItem(tipo_text))
+
+                layout.addWidget(table)
+
+                lbl_total = QLabel(f"Total pendente: R$ {total_pendente:.2f}  |  {len(rows)} parcela(s)")
+                lbl_total.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600; padding: 4px 0;")
+                layout.addWidget(lbl_total)
 
             btn_fechar = QPushButton("Fechar")
             btn_fechar.setStyleSheet(f"""
-                QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                    border-radius: 6px; color: {t.text}; padding: 8px 20px;
-                    font-size: 13px; font-weight: 600; }}
-                QPushButton:hover {{ background: {t.border}; }}
+                QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                    border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 600; }}
+                QPushButton:hover {{ background: {t.primary_hover}; }}
             """)
             btn_fechar.clicked.connect(dlg.accept)
-            btn_row = QHBoxLayout()
-            btn_row.addStretch()
-            btn_row.addWidget(btn_fechar)
-            layout.addLayout(btn_row)
+            layout.addWidget(btn_fechar, 0, Qt.AlignCenter)
 
             dlg.exec()
 
         def _on_error(e):
-            show_error(self, "Erro", f"Falha ao buscar boletos:\n{e}")
+            show_error(self, "Erro", f"Falha ao buscar pendencias:\n{e}")
 
         run_in_thread(_do_query, _on_result, _on_error)
-
     def _open_calculadora(self):
         from frontend.app.services.calculadora import CalculadoraDialog
         dlg = CalculadoraDialog(self)
@@ -2821,22 +2869,21 @@ QTabBar::tab:hover {{
         run_in_thread(_do_send, _on_sent, _on_error)
 
     def _calcular_barcode(self, row: tuple) -> str | None:
-        empresa = str(row[0])
-        portador = str(row[25])
-        nosso_numero = row[27]
-        if not nosso_numero:
+        id_parcela = row[24]
+        if not id_parcela:
             return None
 
         try:
             from frontend.app.core.firebird_client import FirebirdClient
+            from frontend.app.services.boleto_watcher import _ensure_table
             fb = FirebirdClient()
             fb.conectar()
+            _ensure_table()
             r = fb.query(
                 "SELECT CODIGOBARRAS, LINHADIGITAVEL, CAMINHOPDF "
                 "FROM BOLETO_GERADO "
-                "WHERE EMPRESA = ? AND PORTADOR = ? AND NOSSONUMERO = ? "
-                "AND IDPARCELA IS NOT NULL",
-                (empresa, portador, str(nosso_numero)),
+                "WHERE IDPARCELA = ?",
+                (id_parcela,),
             )
             fb.fechar()
             if r:
@@ -2847,7 +2894,7 @@ QTabBar::tab:hover {{
         return None
 
     def _load_tipo_cliente_options(self) -> list[tuple[str, str]]:
-        items = [("Todos", "")]
+        items: list[tuple[str, str]] = []
         try:
             from frontend.app.core.firebird_client import FirebirdClient
             fb = FirebirdClient()
@@ -2866,8 +2913,8 @@ QTabBar::tab:hover {{
                 fb.fechar()
         except Exception:
             pass
-        if len(items) == 1:
-            items = [("Todos", ""), ("Padrão (01)", "01"), ("Administradora (02)", "02")]
+        if not items:
+            items = [("Padrão (01)", "01"), ("Administradora (02)", "02")]
         return items
 
     def _load_bank_config(self) -> dict:

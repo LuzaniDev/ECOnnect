@@ -177,6 +177,36 @@ class UserSettingsView(QWidget):
         fb_card_layout.addStretch()
         layout.addWidget(fb_card)
 
+        # --- Boleto directories card ---
+        boleto_card = QFrame()
+        boleto_card.setObjectName("settingsCard")
+        boleto_card.setStyleSheet(CARD_STYLE)
+        boleto_card_layout = QVBoxLayout(boleto_card)
+        boleto_card_layout.setSpacing(6)
+
+        boleto_section = QLabel("Diretorios de Boletos")
+        boleto_section.setObjectName("sectionTitle")
+        boleto_card_layout.addWidget(boleto_section)
+
+        boleto_desc = QLabel(
+            "Diretorios monitorados pelo watcher de boletos (boleto_pdf + watchdog). "
+            "Os PDFs encontrados sao processados e inseridos em BOLETO_GERADO automaticamente."
+        )
+        boleto_desc.setObjectName("sectionDesc")
+        boleto_desc.setWordWrap(True)
+        boleto_card_layout.addWidget(boleto_desc)
+
+        boleto_divider = QFrame()
+        boleto_divider.setStyleSheet(f"max-height: 1px; min-height: 1px; background-color: {t.border}; border: none;")
+        boleto_card_layout.addWidget(boleto_divider)
+
+        self._boleto_dirs_label = QLabel("Carregando...")
+        self._boleto_dirs_label.setWordWrap(True)
+        self._boleto_dirs_label.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; padding: 4px 0;")
+        boleto_card_layout.addWidget(self._boleto_dirs_label)
+
+        layout.addWidget(boleto_card)
+
         # --- Tag Cooldown config card ---
         tag_card = QFrame()
         tag_card.setObjectName("settingsCard")
@@ -504,3 +534,25 @@ class UserSettingsView(QWidget):
                 self.user.update(u)
                 break
         self._load_tag_cooldown_table()
+        self._load_boleto_dirs()
+
+    def _load_boleto_dirs(self):
+        try:
+            from frontend.app.services.boleto_watcher import _listar_configs, _diretorio_valido
+            configs = _listar_configs()
+            if not configs:
+                self._boleto_dirs_label.setText("Nenhuma configuracao de boleto encontrada em TCOBPARAMETROECOBRANCA.")
+                return
+            lines = []
+            for row in configs:
+                emp = str(row[0]).strip()
+                port = str(row[1]).strip()
+                diretorio = str(row[2] or "").strip()
+                prefixo = str(row[3] or "").strip()
+                valido = _diretorio_valido(diretorio)
+                status = "OK" if valido else "INACESSIVEL"
+                lines.append(f"  Empresa {emp} / Portador {port}: {diretorio}")
+                lines.append(f"    Prefixo: {prefixo}  Status: {status}")
+            self._boleto_dirs_label.setText("\n".join(lines))
+        except Exception as e:
+            self._boleto_dirs_label.setText(f"Erro ao carregar diretorios: {e}")

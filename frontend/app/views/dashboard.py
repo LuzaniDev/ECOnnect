@@ -801,6 +801,7 @@ class DashboardView(QWidget):
     # ── Activity & Runs ────────────────────────────────
 
     def _render_activity(self, activities: list):
+        t = theme_manager.current()
         self._activity_panel.clear_widgets()
         if not activities:
             noop = QLabel("Nenhuma atividade recente.")
@@ -818,6 +819,7 @@ class DashboardView(QWidget):
             )
 
     def _render_runs(self, runs: list):
+        t = theme_manager.current()
         self._runs_panel.clear_widgets()
         if not runs:
             noop = QLabel("Nenhuma execucao recente.")

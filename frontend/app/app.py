@@ -22,8 +22,11 @@ from frontend.app.views.admin_tabs import AdminTabsView
 from frontend.app.views.template_list import TemplateListView
 from frontend.app.views.template_form import TemplateFormView
 from frontend.app.views.meta_view import MetaView
+from frontend.app.views.data_pipeline import DataPipelineView
 from frontend.app.widgets.sidebar import Sidebar
 from frontend.app.widgets.dialogs import show_error
+from frontend.app.widgets.loading_overlay import LoadingOverlay
+from frontend.app.widgets.worker import run_in_thread
 from frontend.app.core.logger import logger
 from frontend.app.core.firebird_client import fb
 from frontend.app.core.theme import theme_manager, Theme, _build_sidebar_qss
@@ -126,7 +129,53 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 600)
         self.resize(1200, 800)
 
+        self._show_loading_overlay()
+        self._start_initial_scan()
+
+    def _show_loading_overlay(self):
+        self._clear_content()
+        self._loading_overlay = LoadingOverlay(self)
+        self._loading_overlay.set_indeterminate("Preparando processamento de boletos...")
+        self.content_layout.addWidget(self._loading_overlay)
+        self._loading_overlay.show()
+        QApplication.processEvents()
+
+    def _hide_loading_overlay(self):
+        if hasattr(self, "_loading_overlay") and self._loading_overlay:
+            self._loading_overlay.hide()
+            self._loading_overlay.deleteLater()
+            self._loading_overlay = None
+
+    def _start_initial_scan(self):
+        logger.info("APP", "Iniciando scan inicial de boletos...")
+        total = 0
+        try:
+            from frontend.app.services.boleto_watcher import executar_scan_completo
+            total = executar_scan_completo()
+            logger.info("APP", f"Scan inicial concluido: {total} boletos processados")
+        except Exception as e:
+            logger.error("APP", f"Erro no scan inicial de boletos: {e}")
+            import traceback
+            logger.error("APP", traceback.format_exc())
+
+        if hasattr(self, "_loading_overlay") and self._loading_overlay:
+            self._loading_overlay.set_indeterminate(f"{total} boletos processados" if total else "Nenhum boleto pendente")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(800, self._pos_scan)
+
+    def _pos_scan(self):
+        self._hide_loading_overlay()
+        self._init_watcher()
         self._show_main()
+
+    def _init_watcher(self):
+        try:
+            from frontend.app.services.boleto_watcher import BoletoWatcher
+            self._boleto_watcher = BoletoWatcher()
+            self._boleto_watcher.start()
+            logger.info("APP", "BoletoWatcher (watchdog) iniciado")
+        except Exception as e:
+            logger.error("APP", f"Erro ao iniciar BoletoWatcher: {e}")
 
     def _show_main(self):
         self._clear_content()
@@ -154,6 +203,7 @@ class MainWindow(QMainWindow):
         self.meta = MetaView(self.token, self.user)
         self.template_list = TemplateListView(self.token, self.user)
         self.template_form = TemplateFormView(self.token, self.user)
+        self.data_pipeline = DataPipelineView()
 
         self.stack.addWidget(self.dashboard)
         self.stack.addWidget(self.user_settings)
@@ -163,6 +213,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.admin_tabs)
         self.stack.addWidget(self.template_list)
         self.stack.addWidget(self.template_form)
+        self.stack.addWidget(self.data_pipeline)
 
         self.sidebar.nav_dashboard.connect(self._show_dashboard)
         self.sidebar.nav_settings.connect(self._show_settings)
@@ -170,6 +221,7 @@ class MainWindow(QMainWindow):
         self.sidebar.nav_requisicoes.connect(self._show_requisicoes)
         self.sidebar.nav_meta.connect(self._show_meta)
         self.sidebar.nav_admin_tabs.connect(self._show_admin_tabs)
+        self.sidebar.nav_data_pipeline.connect(self._show_data_pipeline)
         self.sidebar.nav_logs.connect(self._open_log_viewer)
         self.sidebar.nav_logout.connect(self._sair)
 
@@ -198,6 +250,10 @@ class MainWindow(QMainWindow):
     def _show_admin_tabs(self):
         self.stack.setCurrentWidget(self.admin_tabs)
         self.admin_tabs.refresh()
+
+    def _show_data_pipeline(self):
+        self.stack.setCurrentWidget(self.data_pipeline)
+        self.data_pipeline.refresh()
 
     def _show_templates(self):
         self.stack.setCurrentWidget(self.template_list)

@@ -2,6 +2,7 @@ import sys
 import os
 import datetime
 import logging
+import threading
 import fdb
 from pathlib import Path
 from frontend.app.config import settings
@@ -20,6 +21,7 @@ def _log_fb(msg: str, level: str = "INFO") -> None:
 
 class FirebirdClient:
     _instance = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -32,14 +34,15 @@ class FirebirdClient:
         return cls._instance
 
     def configure(self, dsn: str | None = None, user: str | None = None, password: str | None = None):
-        if dsn is not None:
-            self._dsn = dsn
-        if user is not None:
-            self._user = user
-        if password is not None:
-            self._password = password
-        _log_fb(f"Reconfigurado: dsn={self._dsn!r}, user={self._user!r}")
-        self.fechar()
+        with self._lock:
+            if dsn is not None:
+                self._dsn = dsn
+            if user is not None:
+                self._user = user
+            if password is not None:
+                self._password = password
+            _log_fb(f"Reconfigurado: dsn={self._dsn!r}, user={self._user!r}")
+            self.fechar()
 
     def conectar(self):
         if self._connection is not None:
@@ -65,70 +68,94 @@ class FirebirdClient:
         return self._connection
 
     def executar(self, sql: str, params: tuple | dict | None = None):
-        conn = self.conectar()
-        cursor = conn.cursor()
-        try:
-            if params:
-                cursor.execute(sql, params)
-            else:
-                cursor.execute(sql)
-            conn.commit()
-            return cursor
-        except Exception:
-            conn.rollback()
-            raise
+        with self._lock:
+            conn = self.conectar()
+            cursor = conn.cursor()
+            try:
+                if params:
+                    cursor.execute(sql, params)
+                else:
+                    cursor.execute(sql)
+                conn.commit()
+                return cursor
+            except Exception:
+                conn.rollback()
+                raise
 
     def query(self, sql: str, params: tuple | dict | None = None) -> list:
-        conn = self.conectar()
-        cursor = conn.cursor()
-        try:
-            if params:
-                cursor.execute(sql, params)
-            else:
-                cursor.execute(sql)
-            rows = cursor.fetchall()
-            cursor.close()
-            conn.commit()
-            _log_fb(f"Query OK: {len(rows)} linhas")
-            return rows
-        except Exception as e:
-            cursor.close()
-            conn.rollback()
-            _log_fb(f"Query ERROR: {e}", "ERROR")
-            raise
+        with self._lock:
+            conn = self.conectar()
+            cursor = conn.cursor()
+            try:
+                if params:
+                    cursor.execute(sql, params)
+                else:
+                    cursor.execute(sql)
+                rows = cursor.fetchall()
+                conn.commit()
+                cursor.close()
+                _log_fb(f"Query OK: {len(rows)} linhas")
+                return rows
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+                _log_fb(f"Query ERROR: {e}", "ERROR")
+                raise
 
     def executar_um(self, sql: str, params: tuple | dict | None = None):
-        conn = self.conectar()
-        cursor = conn.cursor()
-        try:
-            if params:
-                cursor.execute(sql, params)
-            else:
-                cursor.execute(sql)
-            row = cursor.fetchone()
-            cursor.close()
-            conn.commit()
-            return row
-        except Exception:
-            conn.rollback()
-            cursor.close()
-            raise
+        with self._lock:
+            conn = self.conectar()
+            cursor = conn.cursor()
+            try:
+                if params:
+                    cursor.execute(sql, params)
+                else:
+                    cursor.execute(sql)
+                row = cursor.fetchone()
+                conn.commit()
+                cursor.close()
+                return row
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+                raise
 
     def query_with_columns(self, sql: str, params: tuple | dict | None = None) -> tuple[list[str], list[tuple]]:
-        conn = self.conectar()
-        cursor = conn.cursor()
-        try:
-            if params:
-                cursor.execute(sql, params)
-            else:
-                cursor.execute(sql)
-            col_names = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchall()
-            cursor.close()
-            return col_names, rows
-        except Exception:
-            cursor.close()
-            raise
+        with self._lock:
+            conn = self.conectar()
+            cursor = conn.cursor()
+            try:
+                if params:
+                    cursor.execute(sql, params)
+                else:
+                    cursor.execute(sql)
+                col_names = [desc[0] for desc in cursor.description] if cursor.description else []
+                rows = cursor.fetchall()
+                conn.commit()
+                cursor.close()
+                return col_names, rows
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+                raise
 
     def fechar(self):
         if self._connection:

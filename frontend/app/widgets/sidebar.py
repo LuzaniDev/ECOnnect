@@ -21,6 +21,7 @@ ALL_TABS = {
     "configuracoes": {"label": "Configurações", "group": "Administração"},
     "admin_tabs": {"label": "Gerenciar Abas", "group": "Administração"},
     "logs": {"label": "Logs do Sistema", "group": "Administração"},
+    "data_pipeline": {"label": "Data Pipeline", "group": "Administração"},
 }
 
 
@@ -33,6 +34,7 @@ class Sidebar(QFrame):
     nav_logout = Signal()
     nav_logs = Signal()
     nav_admin_tabs = Signal()
+    nav_data_pipeline = Signal()
 
 
     def __init__(self, username: str, role: str, permitted_tabs: list[str] | None = None):
@@ -99,6 +101,7 @@ class Sidebar(QFrame):
             nav_items.append(("configuracoes", self.nav_settings))
             nav_items.append(("logs", self.nav_logs))
             nav_items.append(("admin_tabs", self.nav_admin_tabs))
+            nav_items.append(("data_pipeline", self.nav_data_pipeline))
 
         tab_perms = set(permitted_tabs or []) if not is_admin else None
 

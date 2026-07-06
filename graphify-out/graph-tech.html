@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0a0a1a;overflow:hidden;font-family:system-ui,sans-serif;color:#c0c0e0;}
+canvas{display:block;position:absolute;top:0;left:0;}
+#ui{position:absolute;top:0;left:0;right:0;z-index:10;pointer-events:none;}
+#ui>*{pointer-events:auto;}
+#title{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(192,192,224,0.3);}
+#search{position:absolute;top:40px;left:50%;transform:translateX(-50%);
+  background:rgba(10,10,26,0.85);border:1px solid rgba(79,172,254,0.15);
+  border-radius:6px;width:220px;padding:0 10px;}
+#search input{width:100%;background:transparent;border:none;outline:none;
+  color:#d0d0e0;font-size:11px;padding:6px 0;}
+#filter{position:absolute;top:76px;left:10px;font-size:10px;color:#6666aa;}
+#filter select{background:rgba(10,10,26,0.85);border:1px solid rgba(79,172,254,0.12);
+  border-radius:5px;padding:4px 6px;color:#c0c0e0;font-size:10px;outline:none;}
+#stats{position:absolute;bottom:48px;right:10px;font-size:8px;color:rgba(192,192,224,0.15);text-align:right;line-height:1.4;}
+#legend{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  display:flex;gap:12px;background:rgba(10,10,26,0.75);border:1px solid rgba(79,172,254,0.1);
+  border-radius:6px;padding:5px 12px;}
+#tip{position:absolute;display:none;z-index:20;pointer-events:none;
+  background:rgba(10,10,26,0.92);border:1px solid rgba(79,172,254,0.2);
+  border-radius:8px;padding:8px 12px;font-size:11px;max-width:280px;}
+.l{display:flex;align-items:center;gap:4px;font-size:9px;color:rgba(192,192,224,0.45);}
+.d{width:6px;height:6px;border-radius:50%;}
+.d0{background:#4facfe;box-shadow:0 0 4px rgba(79,172,254,0.3);}
+.d1{background:#43e97b;box-shadow:0 0 4px rgba(67,233,123,0.3);}
+.d2{background:#fa709a;box-shadow:0 0 4px rgba(250,112,154,0.3);}
+.d3{background:#a78bfa;box-shadow:0 0 4px rgba(167,139,250,0.3);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">ECOnnect — Data Pipeline</div>
+  <div id="search"><input id="q" placeholder="Buscar..." autocomplete="off"></div>
+  <div id="filter">
+    <select id="g">
+      <option value="">Todos</option>
+      <option value="firebird">Firebird</option>
+      <option value="postgresql">PostgreSQL</option>
+      <option value="api">API</option>
+      <option value="code">Codigo</option>
+    </select>
+  </div>
+</div>
+<div id="stats"></div>
+<div id="legend">
+  <div class="l"><span class="d d0"></span>Firebird</div>
+  <div class="l"><span class="d d1"></span>PostgreSQL</div>
+  <div class="l"><span class="d d2"></span>API</div>
+  <div class="l"><span class="d d3"></span>Codigo</div>
+</div>
+<div id="tip"></div>
+<script>
+const DATA = __GRAPH_DATA__;
+
+const COL = {firebird:'#4facfe',postgresql:'#43e97b',api:'#fa709a',code:'#a78bfa'};
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, nodes, links, nodeMap;
+let search = '', filter = '';
+let hoverNode = null;
+let scale = 1, tx = 0, ty = 0;
+
+function init() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  nodeMap = {};
+  nodes = DATA.nodes.map(n => {
+    nodeMap[n.id] = n;
+    return { ...n, x: Math.random()*W, y: Math.random()*H, vx:0, vy:0, r: n.group==='firebird'?8:n.group==='postgresql'?7:5 };
+  });
+  links = DATA.links.map(l => ({
+    source: typeof l.source==='object'?l.source.id:l.source,
+    target: typeof l.target==='object'?l.target.id:l.target,
+    label: l.label||''
+  }));
+}
+
+function tick() {
+  const repel = 8000, attract = 0.005, center = 0.001, damping = 0.85;
+  for (const n of nodes) {
+    let fx = 0, fy = 0;
+    // Center gravity
+    fx += (W/2 - n.x) * center;
+    fy += (H/2 - n.y) * center;
+    // Repulsion
+    for (const o of nodes) {
+      if (o === n) continue;
+      const dx = n.x - o.x, dy = n.y - o.y;
+      const d2 = dx*dx + dy*dy || 1;
+      fx += dx / d2 * repel;
+      fy += dy / d2 * repel;
+    }
+    n.fx = fx; n.fy = fy;
+  }
+  // Attraction along edges
+  for (const l of links) {
+    const s = nodeMap[l.source], t = nodeMap[l.target];
+    if (!s || !t) continue;
+    const dx = t.x - s.x, dy = t.y - s.y;
+    const d = Math.sqrt(dx*dx + dy*dy) || 1;
+    const f = (d - 80) * attract;
+    s.fx += dx/d * f; s.fy += dy/d * f;
+    t.fx -= dx/d * f; t.fy -= dy/d * f;
+  }
+  for (const n of nodes) {
+    n.vx = (n.vx + n.fx) * damping;
+    n.vy = (n.vy + n.fy) * damping;
+    n.x += n.vx; n.y += n.vy;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(tx, ty);
+  ctx.scale(scale, scale);
+
+  const filtered = filter ? nodes.filter(n => n.group === filter) : nodes;
+  const filterSet = new Set(filtered.map(n => n.id));
+  const linkVisible = filter ? l => filterSet.has(l.source) && filterSet.has(l.target) : true;
+
+  // Links
+  for (const l of links) {
+    if (!linkVisible(l)) continue;
+    const s = nodeMap[l.source], t = nodeMap[l.target];
+    if (!s || !t) continue;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y);
+    ctx.strokeStyle = l.label === 'alimenta' ? 'rgba(79,172,254,0.25)' :
+                      l.label === 'acessa' ? 'rgba(250,112,154,0.2)' : 'rgba(167,139,250,0.12)';
+    ctx.lineWidth = l.label === 'alimenta' ? 1.5 : 0.8;
+    ctx.stroke();
+  }
+
+  // Nodes
+  const searchLower = search.toLowerCase();
+  for (const n of nodes) {
+    if (filter && n.group !== filter) continue;
+    const match = !search || (n.label||'').toLowerCase().includes(searchLower);
+    const isHover = hoverNode === n;
+
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r * (isHover ? 1.4 : 1), 0, Math.PI * 2);
+    ctx.fillStyle = match ? (COL[n.group] || '#555577') : 'rgba(40,40,60,0.15)';
+    ctx.fill();
+    if (isHover) {
+      ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+
+    if (match && (n.group === 'firebird' || n.group === 'postgresql')) {
+      ctx.fillStyle = 'rgba(192,192,224,0.4)';
+      ctx.font = '8px system-ui';
+      ctx.fillText((n.label||'').length > 22 ? (n.label||'').slice(0,20)+'..' : n.label||'', n.x + n.r + 4, n.y + 3);
+    }
+  }
+
+  ctx.restore();
+}
+
+function loop() {
+  tick(); draw();
+  requestAnimationFrame(loop);
+}
+
+// Events
+function getNode(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left - tx) / scale;
+  const my = (e.clientY - rect.top - ty) / scale;
+  for (const n of nodes) {
+    if (filter && n.group !== filter) continue;
+    const dx = mx - n.x, dy = my - n.y;
+    if (dx*dx + dy*dy < (n.r+5)*(n.r+5)) return n;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousemove', e => {
+  const n = getNode(e);
+  hoverNode = n;
+  canvas.style.cursor = n ? 'pointer' : 'default';
+  const tip = document.getElementById('tip');
+  if (n) {
+    const grp = {firebird:'Firebird',postgresql:'PostgreSQL',api:'API',code:'Codigo'};
+    tip.innerHTML = `<b style="color:#e0e0f0">${n.label}</b><br><span style="color:#8888aa;font-size:10px">${grp[n.group]||n.group||'Codigo'}</span>` +
+      (n.description ? `<br><span style="color:#7777aa;font-size:9px">${n.description}</span>` : '');
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('click', e => {
+  const n = getNode(e);
+  if (n) {
+    tx = W/2 - n.x * scale;
+    ty = H/2 - n.y * scale;
+  }
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  scale = Math.max(0.2, Math.min(10, scale * delta));
+}, {passive:false});
+
+document.getElementById('q').addEventListener('input', e => { search = e.target.value; });
+document.getElementById('g').addEventListener('change', e => { filter = e.target.value; });
+
+// Stats
+const cnt = {};
+DATA.nodes.forEach(n => { const g = n.group||'code'; cnt[g] = (cnt[g]||0)+1; });
+document.getElementById('stats').innerHTML = Object.entries(cnt).map(([k,v])=>`${k}: ${v}`).join('<br>');
+
+init();
+loop();
+</script>
+</body>
+</html>

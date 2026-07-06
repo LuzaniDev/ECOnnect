@@ -63,6 +63,74 @@ class _FilterPopup(QDialog):
         return [data for data, cb in self._checkboxes.items() if cb.isChecked()]
 
 
+class _MissedJobsDialog(QDialog):
+    def __init__(self, jobs, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Encontrados na Fila")
+        self.setMinimumSize(500, 350)
+        self.setStyleSheet("""
+            QDialog { background: #1e1e2e; color: #c0c0d0; }
+            QLabel { color: #c0c0d0; }
+        """)
+        self._action = "cancel"
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = QLabel("Envios Pendentes do Periodo")
+        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #e0e0f0;")
+        layout.addWidget(title)
+
+        total_clients = sum(len(j.get("clients", [])) for j in jobs)
+        msg = QLabel(
+            f"Voce ficou offline e <b>{len(jobs)} agendamento(s)</b> "
+            f"(<b>{total_clients}</b> cliente(s)) nao foram executados."
+        )
+        msg.setWordWrap(True)
+        msg.setStyleSheet("font-size: 12px; color: #a0a0b0;")
+        layout.addWidget(msg)
+
+        # Job list
+        for i, job in enumerate(jobs):
+            n_clients = len(job.get("clients", []))
+            tpl = job.get("template_name", "sem template")
+            sched = job.get("scheduled_for", "?")[:16]
+            job_lbl = QLabel(f"  #{i+1} — {n_clients} cliente(s) — {tpl} — agendado: {sched}")
+            job_lbl.setStyleSheet("font-size: 11px; color: #c0c0d0; padding: 4px 8px; border: 1px solid #3a3a4a; border-radius: 4px;")
+            layout.addWidget(job_lbl)
+
+        layout.addStretch()
+
+        btn_layout = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar Tudo")
+        btn_cancel.setStyleSheet("""
+            QPushButton { background: transparent; border: 1px solid #e06c75; border-radius: 6px;
+                padding: 8px 20px; color: #e06c75; font-size: 12px; font-weight: 600; }
+            QPushButton:hover { background: rgba(224,108,117,0.15); }
+        """)
+        btn_cancel.clicked.connect(lambda: self._done("cancel"))
+        btn_layout.addWidget(btn_cancel)
+
+        btn_send = QPushButton("Enviar Agora")
+        btn_send.setStyleSheet("""
+            QPushButton { background: #4facfe; border: none; border-radius: 6px;
+                padding: 8px 20px; color: #fff; font-size: 12px; font-weight: 600; }
+            QPushButton:hover { background: #3d8bda; }
+        """)
+        btn_send.clicked.connect(lambda: self._done("send"))
+        btn_layout.addWidget(btn_send)
+
+        layout.addLayout(btn_layout)
+
+    def _done(self, action):
+        self._action = action
+        self.accept()
+
+    def get_action(self):
+        return self._action
+
+
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_confirm, show_error, show_success
 from frontend.app.core.logger import logger
@@ -1752,6 +1820,32 @@ QTabBar::tab:hover {{
         self._timer.timeout.connect(self._check_scheduled_jobs)
         self._timer.start(30000)
 
+    def _check_missed_jobs(self):
+        jobs = self._load_jobs()
+        now = datetime.now()
+        missed = []
+        for job in jobs:
+            if job["status"] == "pending" and job.get("scheduled_for"):
+                try:
+                    sched = datetime.fromisoformat(job["scheduled_for"])
+                    if sched <= now:
+                        missed.append(job)
+                except Exception:
+                    pass
+        if not missed:
+            return
+
+        dlg = _MissedJobsDialog(missed, self)
+        dlg.exec()
+        action = dlg.get_action()
+        if action == "send":
+            for job in missed:
+                self._execute_job_async(job)
+        elif action == "cancel":
+            for job in missed:
+                job["status"] = "cancelled"
+            self._save_jobs_to_disk(self._load_jobs())  # recarrega e salva
+
     def _check_scheduled_jobs(self):
         jobs = self._load_jobs()
         now = datetime.now()
@@ -3024,7 +3118,11 @@ QTabBar::tab:hover {{
         result = template
         for placeholder, col_idx in PLACEHOLDER_MAP.items():
             if col_idx < len(row) and row[col_idx] is not None:
-                val = str(row[col_idx])
+                val = row[col_idx]
+                if isinstance(val, (datetime, date)):
+                    val = self._format_date(val)
+                else:
+                    val = str(val)
                 result = result.replace("{" + placeholder + "}", val)
         if "{codigo_barras}" in result or "{linha_digitavel}" in result:
             bc = self._calcular_barcode(row)

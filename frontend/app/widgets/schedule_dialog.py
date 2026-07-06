@@ -1,8 +1,8 @@
-from PySide6.QtCore import Qt, QDateTime
+from PySide6.QtCore import Qt, QDateTime, QTime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QRadioButton, QDateTimeEdit, QFrame, QDialogButtonBox,
-    QGroupBox, QSpinBox, QCheckBox,
+    QGroupBox, QSpinBox, QCheckBox, QTimeEdit,
 )
 
 
@@ -13,7 +13,7 @@ class ScheduleDialog(QDialog):
     def __init__(self, parent, client_count: int, template_name: str):
         super().__init__(parent)
         self.setWindowTitle("Agendar Envio")
-        self.setMinimumSize(480, 420)
+        self.setMinimumSize(480, 520)
         self.setStyleSheet(SCHEDULE_STYLE)
 
         layout = QVBoxLayout(self)
@@ -32,10 +32,12 @@ class ScheduleDialog(QDialog):
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        # ── Agora ──
         self.radio_agora = QRadioButton("Enviar agora")
         self.radio_agora.setChecked(True)
         layout.addWidget(self.radio_agora)
 
+        # ── Agendar ──
         self.radio_agendar = QRadioButton("Agendar para:")
         layout.addWidget(self.radio_agendar)
 
@@ -49,7 +51,7 @@ class ScheduleDialog(QDialog):
 
         self.radio_agendar.toggled.connect(self.dt_picker.setEnabled)
 
-        # --- Recurrence ---
+        # ── Recurrence ──
         self.repeat_group = QGroupBox("Recorrência")
         self.repeat_group.setEnabled(False)
         repeat_layout = QVBoxLayout(self.repeat_group)
@@ -81,7 +83,7 @@ class ScheduleDialog(QDialog):
         days_row = QHBoxLayout()
         days_row.setContentsMargins(20, 0, 0, 0)
         self.day_checks = {}
-        for day_name in ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]:
+        for day_name in ["Seg", "Ter", "Qua", "Qui", "Sex", "S\u00e1b", "Dom"]:
             cb = QCheckBox(day_name)
             cb.setEnabled(False)
             self.day_checks[day_name] = cb
@@ -95,14 +97,73 @@ class ScheduleDialog(QDialog):
 
         layout.addWidget(self.repeat_group)
 
-        # Enable/disable recurrence group when "Agendar para" is selected
         self.radio_agendar.toggled.connect(self._on_agendar_toggled)
         self.repeat_none.toggled.connect(self._on_repeat_changed)
         self.repeat_hourly.toggled.connect(self._on_repeat_changed)
         self.repeat_weekly.toggled.connect(self._on_repeat_changed)
 
+        # ── Baseado no Vencimento ──
+        self.radio_venc = QRadioButton("Baseado no Vencimento")
+        layout.addWidget(self.radio_venc)
+
+        venc_group = QGroupBox()
+        venc_group.setEnabled(False)
+        venc_layout = QVBoxLayout(venc_group)
+        venc_layout.setSpacing(8)
+
+        venc_antes_row = QHBoxLayout()
+        self.radio_antes = QRadioButton()
+        self.radio_antes.setChecked(True)
+        self.spin_antes = QSpinBox()
+        self.spin_antes.setMinimum(1)
+        self.spin_antes.setMaximum(365)
+        self.spin_antes.setValue(3)
+        venc_antes_row.addWidget(self.radio_antes)
+        venc_antes_row.addWidget(QLabel("dia(s) ANTES do vencimento"))
+        venc_antes_row.addStretch()
+        venc_layout.addLayout(venc_antes_row)
+
+        self.radio_no_dia = QRadioButton("No dia do vencimento")
+        venc_layout.addWidget(self.radio_no_dia)
+
+        venc_depois_row = QHBoxLayout()
+        self.radio_depois = QRadioButton()
+        self.spin_depois = QSpinBox()
+        self.spin_depois.setMinimum(1)
+        self.spin_depois.setMaximum(365)
+        self.spin_depois.setValue(3)
+        venc_depois_row.addWidget(self.radio_depois)
+        venc_depois_row.addWidget(QLabel("dia(s) APÓS o vencimento"))
+        venc_depois_row.addStretch()
+        venc_layout.addLayout(venc_depois_row)
+
+        # Horario
+        time_row = QHBoxLayout()
+        time_row.addWidget(QLabel("Horário de ativação:"))
+        self.time_edit = QTimeEdit()
+        self.time_edit.setDisplayFormat("HH:mm")
+        self.time_edit.setTime(QTime(9, 0))
+        time_row.addWidget(self.time_edit)
+        time_row.addStretch()
+        venc_layout.addLayout(time_row)
+
+        layout.addWidget(venc_group)
+
+        self.radio_venc.toggled.connect(venc_group.setEnabled)
+        self.radio_antes.toggled.connect(lambda: self.spin_antes.setEnabled(True))
+        self.radio_no_dia.toggled.connect(lambda: None)
+        self.radio_depois.toggled.connect(lambda: self.spin_depois.setEnabled(True))
+
+        # Ajustar spin enables
+        self.spin_antes.setEnabled(True)
+        self.spin_depois.setEnabled(False)
+
+        self.radio_antes.toggled.connect(lambda e: self.spin_antes.setEnabled(e))
+        self.radio_depois.toggled.connect(lambda e: self.spin_depois.setEnabled(e))
+
         layout.addStretch()
 
+        # ── Buttons ──
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -132,6 +193,19 @@ class ScheduleDialog(QDialog):
         if self.radio_agora.isChecked():
             return {"mode": "now"}
 
+        if self.radio_venc.isChecked():
+            if self.radio_antes.isChecked():
+                offset = -self.spin_antes.value()
+            elif self.radio_no_dia.isChecked():
+                offset = 0
+            else:
+                offset = self.spin_depois.value()
+            return {
+                "mode": "vencimento",
+                "offset": offset,
+                "time": self.time_edit.time().toString("HH:mm"),
+            }
+
         repeat_type = "none"
         repeat_data = {}
         if self.repeat_hourly.isChecked():
@@ -142,7 +216,7 @@ class ScheduleDialog(QDialog):
         elif self.repeat_weekly.isChecked():
             repeat_type = "weekly"
             days = []
-            day_map = {"Seg": 0, "Ter": 1, "Qua": 2, "Qui": 3, "Sex": 4, "Sáb": 5, "Dom": 6}
+            day_map = {"Seg": 0, "Ter": 1, "Qua": 2, "Qui": 3, "Sex": 4, "S\u00e1b": 5, "Dom": 6}
             for label, idx in day_map.items():
                 if self.day_checks[label].isChecked():
                     days.append(idx)

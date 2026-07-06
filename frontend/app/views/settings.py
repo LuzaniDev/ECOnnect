@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QComboBox,
 )
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor, QPixmap, QIcon, QImage
 from frontend.app.api.client import client
 from frontend.app.widgets.worker import run_in_thread
 from frontend.app.widgets.dialogs import show_error, show_success
@@ -487,20 +487,28 @@ class UserSettingsView(QWidget):
         layout.setSpacing(2)
 
         t = theme_manager.current()
-        btn_up = QPushButton("▲")
+        up_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>"""
+        _up_img = QImage.fromData(up_svg.encode(), "SVG")
+        _up_icon = QIcon(QPixmap.fromImage(_up_img))
+        btn_up = QPushButton(_up_icon, "")
         btn_up.setFixedSize(22, 22)
+        btn_up.setToolTip("Mover para cima")
         btn_up.setStyleSheet(
             f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; "
-            f"border-radius: 3px; color: {t.text_secondary}; font-size: 10px; }} "
+            f"border-radius: 3px; color: {t.text_secondary}; }} "
             f"QPushButton:hover {{ background: {t.border}; color: {t.text}; }}"
         )
         btn_up.clicked.connect(lambda checked, r=row, tname=tag: self._move_tag(r, tname, -1))
 
-        btn_down = QPushButton("▼")
+        down_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>"""
+        _down_img = QImage.fromData(down_svg.encode(), "SVG")
+        _down_icon = QIcon(QPixmap.fromImage(_down_img))
+        btn_down = QPushButton(_down_icon, "")
         btn_down.setFixedSize(22, 22)
+        btn_down.setToolTip("Mover para baixo")
         btn_down.setStyleSheet(
             f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; "
-            f"border-radius: 3px; color: {t.text_secondary}; font-size: 10px; }} "
+            f"border-radius: 3px; color: {t.text_secondary}; }} "
             f"QPushButton:hover {{ background: {t.border}; color: {t.text}; }}"
         )
         btn_down.clicked.connect(lambda checked, r=row, t=tag: self._move_tag(r, t, 1))

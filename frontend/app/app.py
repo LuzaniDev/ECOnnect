@@ -167,6 +167,12 @@ class MainWindow(QMainWindow):
         self._hide_loading_overlay()
         self._init_watcher()
         self._show_main()
+        # Verifica jobs perdidos enquanto estava offline
+        try:
+            if hasattr(self, "mundo_bots") and self.mundo_bots:
+                self.mundo_bots._check_missed_jobs()
+        except Exception:
+            pass
 
     def _init_watcher(self):
         try:

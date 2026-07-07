@@ -22,7 +22,6 @@ from frontend.app.views.admin_tabs import AdminTabsView
 from frontend.app.views.template_list import TemplateListView
 from frontend.app.views.template_form import TemplateFormView
 from frontend.app.views.meta_view import MetaView
-from frontend.app.views.data_pipeline import DataPipelineView
 from frontend.app.widgets.sidebar import Sidebar
 from frontend.app.widgets.dialogs import show_error
 from frontend.app.widgets.loading_overlay import LoadingOverlay
@@ -209,7 +208,6 @@ class MainWindow(QMainWindow):
         self.meta = MetaView(self.token, self.user)
         self.template_list = TemplateListView(self.token, self.user)
         self.template_form = TemplateFormView(self.token, self.user)
-        self.data_pipeline = DataPipelineView()
 
         self.stack.addWidget(self.dashboard)
         self.stack.addWidget(self.user_settings)
@@ -219,7 +217,6 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.admin_tabs)
         self.stack.addWidget(self.template_list)
         self.stack.addWidget(self.template_form)
-        self.stack.addWidget(self.data_pipeline)
 
         self.sidebar.nav_dashboard.connect(self._show_dashboard)
         self.sidebar.nav_settings.connect(self._show_settings)
@@ -227,7 +224,6 @@ class MainWindow(QMainWindow):
         self.sidebar.nav_requisicoes.connect(self._show_requisicoes)
         self.sidebar.nav_meta.connect(self._show_meta)
         self.sidebar.nav_admin_tabs.connect(self._show_admin_tabs)
-        self.sidebar.nav_data_pipeline.connect(self._show_data_pipeline)
         self.sidebar.nav_logs.connect(self._open_log_viewer)
         self.sidebar.nav_logout.connect(self._sair)
 
@@ -256,10 +252,6 @@ class MainWindow(QMainWindow):
     def _show_admin_tabs(self):
         self.stack.setCurrentWidget(self.admin_tabs)
         self.admin_tabs.refresh()
-
-    def _show_data_pipeline(self):
-        self.stack.setCurrentWidget(self.data_pipeline)
-        self.data_pipeline.refresh()
 
     def _show_templates(self):
         self.stack.setCurrentWidget(self.template_list)

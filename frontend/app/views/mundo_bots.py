@@ -137,6 +137,7 @@ from frontend.app.core.logger import logger
 from frontend.app.core.firebird_client import fb
 from frontend.app.core.theme import theme_manager, _hex_to_rgb
 from frontend.app.services.barcode import calcular_codigo_barras, calcular_linha_digitavel
+from frontend.app.config import settings
 
 
 COBRANCA_SQL = """
@@ -1877,6 +1878,9 @@ QTabBar::tab:hover {{
                     headers[str(h[0])] = str(h[1])
             body_template = config.get("body", "")
             clients = job.get("clients", [])
+            limite = settings.MAX_BATCH_SIZE
+            if len(clients) > limite:
+                clients = clients[:limite]
             results = {"success": 0, "errors": 0, "blocked": 0, "total": len(clients), "details": []}
             with httpx.Client(timeout=30.0) as client:
                 for c in clients:
@@ -2885,6 +2889,19 @@ QTabBar::tab:hover {{
         selected = sorted(self._selected_rows)
         if not selected:
             return
+
+        limite = settings.MAX_BATCH_SIZE
+        if len(selected) > limite:
+            resp = show_confirm(
+                self, "Limite de Lote",
+                f"Você selecionou {len(selected)} clientes, mas o limite máximo por lote é {limite}.\n\n"
+                f"Enviar apenas os primeiros {limite}?"
+            )
+            if not resp:
+                self.btn_enviar.setEnabled(True)
+                self.btn_enviar.setText("Enviar")
+                return
+            selected = selected[:limite]
 
         if not self._validar_boletos_antes_envio(body_template, selected):
             return

@@ -457,6 +457,11 @@ class ConfiguradorWindow(QMainWindow):
         fb = QGroupBox("Firebird")
         fb_l = QFormLayout(fb)
         self.fb_dsn = QLineEdit("C:\\ecosis\\dados\\ecodados.eco")
+        self.fb_dsn.setToolTip(
+            "Para servidor remoto use: servidor:C:\\path\\banco.fdb\n"
+            "  Ex: srvlubri:C:\\ecosis\\dados\\ECODADOS.ECO\n\n"
+            "Para local: C:\\path\\banco.fdb\n\n"
+            "NAO use \\\\servidor\\compartilhamento (UNC).")
         self.fb_user = QLineEdit("SYSDBA")
         self.fb_pass = QLineEdit("masterkey")
         self.fb_pass.setEchoMode(QLineEdit.Password)
@@ -566,6 +571,10 @@ class ConfiguradorWindow(QMainWindow):
             parts.append(f"ECOnnect.exe: <b>{exe_path}</b> ({e})")
         self._path_label.setText("<br>".join(parts))
 
+    def _norm_path(self, path: str) -> str:
+        path = path.strip()
+        return path.replace("\\\\", "\\").replace("\\", "/")
+
     def _get_values(self):
         return {
             "DB_HOST": self.pg_host.text().strip(),
@@ -574,7 +583,7 @@ class ConfiguradorWindow(QMainWindow):
             "DB_PASSWORD": self.pg_pass.text().strip(),
             "DB_NAME": self.pg_db.text().strip(),
             "JWT_SECRET": self.jwt_secret.text().strip(),
-            "FB_DATABASE": self.fb_dsn.text().strip(),
+            "FB_DATABASE": self._norm_path(self.fb_dsn.text()),
             "FB_USER": self.fb_user.text().strip(),
             "FB_PASSWORD": self.fb_pass.text().strip(),
         }

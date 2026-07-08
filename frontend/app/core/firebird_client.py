@@ -53,10 +53,11 @@ class FirebirdClient:
                 _log_fb(f"Ping falhou, reconectando: {e}", "WARNING")
                 self._connection = None
 
-        _log_fb(f"Conectando Firebird: dsn={self._dsn!r}, user={self._user!r}")
+        dsn = self._dsn.replace("/", "\\")
+        _log_fb(f"Conectando Firebird: dsn={dsn!r}, user={self._user!r}")
         try:
             self._connection = fdb.connect(
-                dsn=self._dsn,
+                dsn=dsn,
                 user=self._user,
                 password=self._password,
                 charset="WIN1252",

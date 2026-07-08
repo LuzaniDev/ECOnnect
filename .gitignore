@@ -20,7 +20,6 @@ test_*.py
 # Build outputs
 dist/
 build/
-ECOnnect.spec
 file_version_info.txt
 
 # Development scripts

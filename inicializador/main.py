@@ -634,9 +634,35 @@ class InicializadorWindow(QMainWindow):
             QMessageBox.warning(self, "ECOnnect nao encontrado", str(exe))
 
 
+_ECO_STYLE = """
+QMainWindow, QWidget { background-color: #f0f3f5; color: #1a1a2e; font-family: 'Segoe UI','Arial',sans-serif; font-size: 13px; }
+QLabel { background: transparent; color: #1a1a2e; }
+QLabel[heading="true"] { font-size: 20px; font-weight: 700; color: #00398a; }
+QLabel[subheading="true"] { font-size: 13px; color: #5c88b7; }
+QLineEdit { border: 1.5px solid #dce1e5; border-radius: 6px; padding: 7px 10px; background: #ffffff; color: #1a1a2e; font-size: 13px; }
+QLineEdit:focus { border-color: #0e4f9c; }
+QPushButton { border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; background-color: #0e4f9c; color: white; }
+QPushButton:hover { background-color: #00398a; }
+QPushButton:disabled { background-color: #b0c4de; color: #e0e0e0; }
+QPushButton[accent="true"] { background-color: #fa8c20; color: white; }
+QPushButton[accent="true"]:hover { background-color: #e07a10; }
+QPushButton[ghost="true"] { background-color: transparent; color: #0e4f9c; border: 1.5px solid #0e4f9c; }
+QPushButton[ghost="true"]:hover { background-color: #0e4f9c; color: white; }
+QPushButton[success="true"] { background-color: #2ecc71; color: white; }
+QGroupBox { font-size: 14px; font-weight: 600; color: #00398a; border: 1.5px solid #dce1e5; border-radius: 8px; margin-top: 12px; padding: 16px 12px 12px 12px; background: #ffffff; }
+QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 8px; background: #ffffff; }
+QProgressBar { border: none; border-radius: 6px; background-color: #dce1e5; height: 8px; text-align: center; }
+QProgressBar::chunk { background-color: #0e4f9c; border-radius: 6px; }
+QTextEdit { border: 1.5px solid #dce1e5; border-radius: 6px; padding: 8px; background: #ffffff; color: #1a1a2e; font-family: 'Consolas','Courier New',monospace; font-size: 12px; }
+QComboBox { border: 1.5px solid #dce1e5; border-radius: 6px; padding: 7px 10px; background: #ffffff; color: #1a1a2e; }
+QComboBox:focus { border-color: #0e4f9c; }
+QComboBox::drop-down { border: none; width: 24px; }
+"""
+
 def main():
     _resolve_paths()
     app = QApplication(sys.argv); app.setApplicationName("ECOnnect Inicializador")
+    app.setStyleSheet(_ECO_STYLE)
     bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
     icon_p = bundled / "frontend" / "assets" / "app_icon.ico"
     if icon_p.exists():

@@ -1,5 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import collect_all
+
+BUILD_MODE = os.environ.get("BUILD_MODE", "onefile")
 
 datas = [
     ('backend/.env.example', '.'),
@@ -9,6 +12,8 @@ binaries = []
 hiddenimports = [
     'asyncpg', 'asyncpg.protocol', 'fdb',
     'sqlalchemy', 'sqlalchemy.dialects.postgresql',
+    'backend.app.migrations',
+    'passlib', 'passlib.handlers.pbkdf2',
 ]
 
 excludes = [
@@ -66,3 +71,10 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if BUILD_MODE == "onedir":
+    COLLECT(exe, a.binaries, a.datas,
+            strip=False,
+            upx=False,
+            upx_exclude=[],
+            name='ECOnnectConfigurador')

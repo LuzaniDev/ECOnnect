@@ -7,13 +7,13 @@ BUILD_MODE = os.environ.get("BUILD_MODE", "onefile")
 datas = [
     ('backend/.env.example', '.'),
     ('frontend/assets/app_icon.ico', 'frontend/assets'),
+    ('frontend/assets/logo_256.png', 'frontend/assets'),
 ]
 binaries = []
 hiddenimports = [
     'asyncpg', 'asyncpg.protocol', 'fdb',
     'sqlalchemy', 'sqlalchemy.dialects.postgresql',
     'backend.app.migrations',
-    'passlib', 'passlib.handlers.pbkdf2',
 ]
 
 excludes = [

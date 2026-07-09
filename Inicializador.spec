@@ -20,7 +20,7 @@ excludes = [
     'PySide6.QtWebChannel', 'PySide6.QtPositioning',
     'PySide6.QtQuick', 'PySide6.QtQml', 'PySide6.QtQuickWidgets',
     'PySide6.QtCharts', 'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets',
-    'PySide6.QtPrintSupport', 'PySide6.QtSvg', 'PySide6.QtSvgWidgets',
+    'PySide6.QtPrintSupport',
     'PySide6.QtDataVisualization', 'PySide6.QtGraphs',
     'PySide6.QtHttpServer', 'PySide6.QtMultimedia',
     'PySide6.QtMultimediaWidgets', 'PySide6.QtNetwork',

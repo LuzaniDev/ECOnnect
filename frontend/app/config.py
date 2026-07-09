@@ -23,6 +23,7 @@ class Settings:
     FB_PASSWORD: str | None = os.getenv("FB_PASSWORD")
 
     MAX_BATCH_SIZE: int = int(os.getenv("MAX_BATCH_SIZE", "50"))
+    MAX_PDFS_PER_SCAN: int = int(os.getenv("MAX_PDFS_PER_SCAN", "3000"))
 
 
 settings = Settings()

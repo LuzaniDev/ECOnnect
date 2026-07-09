@@ -170,7 +170,42 @@ def _ja_processado(caminho: str) -> bool:
         fb.fechar()
 
 
-def executar_scan_completo(progress_callback=None) -> int:
+def _listar_pdfs_recentes(qtd: int = 10) -> list[str]:
+    """Retorna os N PDFs mais recentes (por mtime) de todas as configs."""
+    import heapq
+    configs = _listar_configs()
+    heap = []
+    for row in configs:
+        diretorio = str(row[2] or "")
+        if not _diretorio_valido(diretorio):
+            continue
+        for root, _, files in os.walk(diretorio.strip()):
+            for fn in files:
+                if fn.lower().endswith(".pdf") and _parse_filename(fn):
+                    path = os.path.join(root, fn)
+                    heapq.heappush(heap, (os.path.getmtime(path), path))
+                    if len(heap) > qtd:
+                        heapq.heappop(heap)
+    heap.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in heap]
+
+
+def verificar_scan_necessario(qtd: int = 10) -> bool:
+    """
+    Verifica se o scan completo e necessario.
+    Retorna True se algum dos N PDFs mais recentes NAO estiver em BOLETO_GERADO.
+    Retorna False se todos ja estiverem processados.
+    """
+    recentes = _listar_pdfs_recentes(qtd)
+    if not recentes:
+        return False
+    for caminho in recentes:
+        if not _ja_processado(caminho):
+            return True
+    return False
+
+
+def executar_scan_completo(max_pdfs: int = 0, progress_callback=None) -> int:
     _ensure_table()
     configs = _listar_configs()
     total_pdfs = 0
@@ -202,6 +237,10 @@ def executar_scan_completo(progress_callback=None) -> int:
                 erros += 1
             if progress_callback:
                 progress_callback(processados, total_pdfs)
+            if max_pdfs > 0 and processados >= max_pdfs:
+                break
+        if max_pdfs > 0 and processados >= max_pdfs:
+            break
 
     return processados
 

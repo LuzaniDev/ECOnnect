@@ -230,9 +230,28 @@ def seed_admin_user(dsn: str, username: str = "admin", password: str | None = No
     return True
 
 
+def _fb_connect_timeout(dsn, user, password, timeout=10):
+    import threading, fdb
+    conn = [None]
+    exc = [None]
+    done = threading.Event()
+    def _do():
+        try:
+            conn[0] = fdb.connect(dsn=dsn, user=user, password=password, charset="WIN1252")
+        except Exception as e:
+            exc[0] = e
+        finally:
+            done.set()
+    threading.Thread(target=_do, daemon=True).start()
+    if not done.wait(timeout=timeout):
+        raise TimeoutError(f"Tempo limite excedido ({timeout}s) ao conectar ao Firebird")
+    if exc[0]:
+        raise exc[0]
+    return conn[0]
+
+
 def seed_firebird_autonomias(dsn: str, user: str, password: str, log_fn=print):
-    import fdb
-    conn = fdb.connect(dsn=dsn, user=user, password=password, charset="WIN1252")
+    conn = _fb_connect_timeout(dsn, user, password)
     cur = conn.cursor()
     count = 0
     for cod, desc in AUTONOMIAS.items():
@@ -249,8 +268,7 @@ def seed_firebird_autonomias(dsn: str, user: str, password: str, log_fn=print):
 
 
 def ensure_firebird_tables(dsn: str, user: str, password: str, log_fn=print):
-    import fdb
-    conn = fdb.connect(dsn=dsn, user=user, password=password, charset="WIN1252")
+    conn = _fb_connect_timeout(dsn, user, password)
     cur = conn.cursor()
 
     tables_created = []
@@ -283,8 +301,7 @@ def ensure_firebird_tables(dsn: str, user: str, password: str, log_fn=print):
 
 
 def verify_firebird_tables(dsn: str, user: str, password: str, log_fn=print) -> dict:
-    import fdb
-    conn = fdb.connect(dsn=dsn, user=user, password=password, charset="WIN1252")
+    conn = _fb_connect_timeout(dsn, user, password)
     cur = conn.cursor()
 
     expected = ["TGEREMPRESA", "TGERUSUARIO", "TGERTIPOBLOQUEIOREMOTO", "TGERBLOQUEIOUSUARIO",

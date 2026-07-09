@@ -17,6 +17,15 @@ from PySide6.QtGui import QFont, QPixmap, QPalette, QColor
 RESOLVED: dict = {}
 ENV_LINES: list[str] = []
 
+
+def _logo_path() -> Path | None:
+    bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
+    for cand in [bundled / "frontend" / "assets" / "logo_256.png",
+                 bundled.parent / "frontend" / "assets" / "logo_256.png"]:
+        if cand.exists():
+            return cand
+    return None
+
 # ── ECocentauro Brand Palette ──
 ECO = {
     "blue_dark":   "#00398a",
@@ -85,6 +94,26 @@ def _write_env(values: dict):
 def _norm_path(path: str) -> str:
     path = path.strip()
     return path.replace("\\\\", "\\").replace("\\", "/")
+
+
+def _fb_connect(dsn: str, user: str, password: str, timeout: float = 10):
+    import threading, fdb
+    conn = [None]
+    exc = [None]
+    done = threading.Event()
+    def _do():
+        try:
+            conn[0] = fdb.connect(dsn=dsn, user=user, password=password, charset="WIN1252")
+        except Exception as e:
+            exc[0] = e
+        finally:
+            done.set()
+    threading.Thread(target=_do, daemon=True).start()
+    if not done.wait(timeout=timeout):
+        raise TimeoutError(f"Tempo limite excedido ({timeout}s) ao conectar ao Firebird")
+    if exc[0]:
+        raise exc[0]
+    return conn[0]
 
 
 # ── QSS Stylesheet (ECocentauro) ──
@@ -160,38 +189,8 @@ QPushButton:pressed {{
     background-color: {ECO['blue_dark']};
 }}
 QPushButton:disabled {{
-    background-color: #b0c4de;
-    color: #e0e0e0;
-}}
-QPushButton[accent="true"] {{
-    background-color: {ECO['orange']};
-    color: white;
-}}
-QPushButton[accent="true"]:hover {{
-    background-color: #e07a10;
-}}
-QPushButton[ghost="true"] {{
-    background-color: transparent;
-    color: {ECO['blue']};
-    border: 1.5px solid {ECO['blue']};
-}}
-QPushButton[ghost="true"]:hover {{
-    background-color: {ECO['blue']};
-    color: white;
-}}
-QPushButton[danger="true"] {{
-    background-color: {ECO['error']};
-    color: white;
-}}
-QPushButton[danger="true"]:hover {{
-    background-color: #c0392b;
-}}
-QPushButton[success="true"] {{
-    background-color: {ECO['success']};
-    color: white;
-}}
-QPushButton[success="true"]:hover {{
-    background-color: #27ae60;
+    background-color: #8899aa;
+    color: #ffffff;
 }}
 QGroupBox {{
     font-size: 14px;
@@ -359,17 +358,15 @@ class WelcomePage(WizardPage):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(16)
 
-        logo_lbl = QLabel("EC")
+        logo_lbl = QLabel()
         logo_lbl.setAlignment(Qt.AlignCenter)
-        logo_lbl.setStyleSheet(f"""
-            font-size: 56px; font-weight: 900;
-            color: {ECO['blue']};
-            background: {ECO['surface']};
-            border-radius: 20px;
-            padding: 20px 30px;
-            max-width: 120px;
-            margin: 0 auto;
-        """)
+        logo_lbl.setFixedSize(180, 72)
+        lp = _logo_path()
+        if lp:
+            pix = QPixmap(str(lp))
+            if not pix.isNull():
+                logo_lbl.setPixmap(pix.scaled(
+                    180, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         layout.addWidget(logo_lbl, 0, Qt.AlignCenter)
 
         title = QLabel("ECOnnect Configurador")
@@ -403,7 +400,6 @@ class WelcomePage(WizardPage):
         layout.addWidget(features)
 
         btn = QPushButton("Comecar Configuracao")
-        btn.setProperty("success", True)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {ECO['blue']}; color: white;
@@ -411,6 +407,7 @@ class WelcomePage(WizardPage):
                 font-size: 16px; font-weight: 700;
             }}
             QPushButton:hover {{ background-color: {ECO['blue_dark']}; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
         """)
         btn.clicked.connect(lambda: parent.next_step() if parent else None)
         layout.addWidget(btn, 0, Qt.AlignCenter)
@@ -444,6 +441,11 @@ class FirebirdPage(WizardPage):
 
         btn_row = QHBoxLayout()
         self.btn_test = QPushButton("Testar Conexao")
+        self.btn_test.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['blue']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: {ECO['blue_dark']}; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_test.clicked.connect(self._test)
         btn_row.addWidget(self.btn_test)
         btn_row.addStretch()
@@ -502,7 +504,11 @@ class FirebirdSetupPage(WizardPage):
 
         btn_row = QHBoxLayout()
         self.btn_run = QPushButton("Executar Preparacao")
-        self.btn_run.setProperty("success", True)
+        self.btn_run.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['success']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: #27ae60; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_run.clicked.connect(self._run)
         btn_row.addWidget(self.btn_run)
         btn_row.addStretch()
@@ -567,6 +573,11 @@ class PostgresPage(WizardPage):
 
         btn_row = QHBoxLayout()
         self.btn_test = QPushButton("Testar Conexao")
+        self.btn_test.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['blue']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: {ECO['blue_dark']}; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_test.clicked.connect(self._test)
         btn_row.addWidget(self.btn_test)
         btn_row.addStretch()
@@ -616,7 +627,7 @@ class PostgresSetupPage(WizardPage):
         layout.setSpacing(12)
 
         layout.addWidget(QLabel("Preparacao do PostgreSQL"))
-        layout.addWidget(QLabel("Cria banco, usuario, tabelas, aplica migracoes e cria admin."))
+        layout.addWidget(QLabel("Cria banco, usuario, tabelas e aplica migracoes."))
 
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
@@ -625,16 +636,22 @@ class PostgresSetupPage(WizardPage):
 
         btn_row = QHBoxLayout()
         self.btn_step1 = QPushButton("1. Criar DB + Usuario")
+        self.btn_step1.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['blue']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: {ECO['blue_dark']}; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_step1.clicked.connect(self._create_db)
         btn_row.addWidget(self.btn_step1)
         self.btn_step2 = QPushButton("2. Criar Tabelas + Migracoes")
+        self.btn_step2.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['blue']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: {ECO['blue_dark']}; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_step2.clicked.connect(self._run_migrations)
         self.btn_step2.setEnabled(False)
         btn_row.addWidget(self.btn_step2)
-        self.btn_step3 = QPushButton("3. Criar Admin")
-        self.btn_step3.clicked.connect(self._seed_admin)
-        self.btn_step3.setEnabled(False)
-        btn_row.addWidget(self.btn_step3)
         layout.addLayout(btn_row)
 
         self.status = QLabel("")
@@ -695,27 +712,6 @@ class PostgresSetupPage(WizardPage):
         if ok:
             self.status.setText("\u2714 " + msg)
             self.status.setStyleSheet(f"color: {ECO['success']}; font-weight: 600; background: transparent;")
-            self.btn_step3.setEnabled(True)
-        else:
-            self.status.setText("\u2716 " + msg)
-            self.status.setStyleSheet(f"color: {ECO['error']}; background: transparent;")
-
-    def _seed_admin(self):
-        self.btn_step3.setEnabled(False)
-        self.status.setText("Criando admin...")
-        self.status.setStyleSheet(f"color: {ECO['text_sec']}; background: transparent;")
-        v = self.get_values()
-        dsn = f"postgresql://{v['DB_USER']}:{v['DB_PASSWORD']}@{v['DB_HOST']}:{v['DB_PORT']}/{v['DB_NAME']}"
-        t = SeedAdminThread(dsn)
-        t.log_signal.connect(self._log)
-        t.finished.connect(self._on_admin_done)
-        self._parent_wizard._run_thread(t)
-
-    def _on_admin_done(self, ok, msg):
-        self.btn_step3.setEnabled(True)
-        if ok:
-            self.status.setText("\u2714 " + msg)
-            self.status.setStyleSheet(f"color: {ECO['success']}; font-weight: 600; background: transparent;")
         else:
             self.status.setText("\u2716 " + msg)
             self.status.setStyleSheet(f"color: {ECO['error']}; background: transparent;")
@@ -748,7 +744,11 @@ class ReviewPage(WizardPage):
 
         btn_row = QHBoxLayout()
         self.btn_save = QPushButton("Salvar .env")
-        self.btn_save.setProperty("success", True)
+        self.btn_save.setStyleSheet(f"""
+            QPushButton {{ background-color: {ECO['success']}; color: white; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: #27ae60; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; }}
+        """)
         self.btn_save.clicked.connect(self._save)
         btn_row.addWidget(self.btn_save)
         self.btn_launch = QPushButton("Salvar e Abrir ECOnnect")
@@ -902,14 +902,6 @@ class DonePage(WizardPage):
 
 # ── THREADS ──
 
-class SimpleLog:
-    def __init__(self, callback: Callable):
-        self._cb = callback
-    def log(self, msg, level="INFO"):
-        if self._cb:
-            self._cb(f"[{level}] {msg}")
-
-
 class TestFbThread(QThread):
     finished = Signal(bool, str)
     def __init__(self, dsn, user, password):
@@ -917,12 +909,13 @@ class TestFbThread(QThread):
         self.dsn = dsn; self.user = user; self.password = password
     def run(self):
         try:
-            import fdb
-            conn = fdb.connect(dsn=self.dsn, user=self.user, password=self.password, charset="WIN1252")
+            conn = _fb_connect(self.dsn, self.user, self.password)
             cur = conn.cursor()
             cur.execute("SELECT 1 FROM RDB$DATABASE")
             cur.fetchone(); cur.close(); conn.close()
             self.finished.emit(True, f"Conectado ao Firebird")
+        except TimeoutError:
+            self.finished.emit(False, "Tempo limite excedido (10s) — verifique servidor e caminho do banco.")
         except Exception as e:
             self.finished.emit(False, str(e))
 
@@ -957,38 +950,61 @@ class CreateDbThread(QThread):
         self.superpass = superpass; self.db_user = db_user
         self.db_pass = db_pass; self.db_name = db_name
     def run(self):
-        slog = SimpleLog(lambda m, l: self.log_signal.emit(m, l))
-        try:
-            import asyncio; import asyncpg
-            async def _create():
-                dsn = f"postgresql://{self.superuser}:{self.superpass}@{self.host}:{self.port}/postgres"
-                slog.log(f"Conectando como superuser...")
-                conn = await asyncpg.connect(dsn, timeout=5)
-                exists_user = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname=$1", self.db_user)
-                if not exists_user:
-                    await conn.execute(f'CREATE USER "{self.db_user}" WITH PASSWORD $1', self.db_pass)
-                    slog.log(f"Usuario '{self.db_user}' criado")
-                else:
-                    await conn.execute(f'ALTER USER "{self.db_user}" WITH PASSWORD $1', self.db_pass)
-                    slog.log(f"Senha do usuario '{self.db_user}' atualizada")
-                exists_db = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname=$1", self.db_name)
-                if not exists_db:
-                    await conn.execute(f'CREATE DATABASE "{self.db_name}" OWNER "{self.db_user}"')
-                    slog.log(f"Database '{self.db_name}' criado")
-                else:
-                    slog.log(f"Database '{self.db_name}' ja existe")
-                await conn.close()
-                dsn2 = f"postgresql://{self.db_user}:{self.db_pass}@{self.host}:{self.port}/{self.db_name}"
-                conn2 = await asyncpg.connect(dsn2, timeout=5)
-                await conn2.execute("CREATE TABLE IF NOT EXISTS _econnect_test (id SERIAL PRIMARY KEY)")
-                await conn2.execute("DROP TABLE _econnect_test")
-                await conn2.close()
-                slog.log("Conexao de testes OK")
-            asyncio.run(_create())
-            self.finished.emit(True, "Banco/usuário criados com sucesso!")
-        except Exception as e:
-            slog.log(f"ERRO: {e}", "ERROR")
-            self.finished.emit(False, str(e))
+        logs = []
+        out = [None]
+        import threading
+        def _do():
+            def log(msg, level="INFO"):
+                logs.append((msg, level))
+            try:
+                import asyncio; import asyncpg
+                async def _create():
+                    dsn = f"postgresql://{self.superuser}:{self.superpass}@{self.host}:{self.port}/postgres"
+                    log("Conectando como superuser...")
+                    conn = await asyncpg.connect(dsn, timeout=5)
+                    usr_id = await conn.fetchval("SELECT quote_ident($1)", self.db_user)
+                    pwd_lit = await conn.fetchval("SELECT quote_literal($1)", self.db_pass)
+                    exists_user = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname=$1", self.db_user)
+                    if not exists_user:
+                        await conn.execute(f"CREATE USER {usr_id} WITH PASSWORD {pwd_lit}")
+                        log(f"Usuario '{self.db_user}' criado")
+                    else:
+                        await conn.execute(f"ALTER USER {usr_id} WITH PASSWORD {pwd_lit}")
+                        log(f"Senha do usuario '{self.db_user}' atualizada")
+                    exists_db = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname=$1", self.db_name)
+                    if not exists_db:
+                        await conn.execute(f'CREATE DATABASE "{self.db_name}" OWNER "{self.db_user}"')
+                        log(f"Database '{self.db_name}' criado")
+                    else:
+                        log(f"Database '{self.db_name}' ja existe")
+                    await conn.close()
+                    dsn2 = f"postgresql://{self.db_user}:{self.db_pass}@{self.host}:{self.port}/{self.db_name}"
+                    conn2 = await asyncpg.connect(dsn2, timeout=5)
+                    await conn2.execute("CREATE TABLE IF NOT EXISTS _econnect_test (id SERIAL PRIMARY KEY)")
+                    await conn2.execute("DROP TABLE _econnect_test")
+                    await conn2.close()
+                    log("Conexao de testes OK")
+                asyncio.run(_create())
+                out[0] = ("ok",)
+            except Exception as e:
+                log(str(e), "ERROR")
+                out[0] = ("error", str(e))
+
+        t = threading.Thread(target=_do, daemon=True)
+        t.start()
+        t.join(timeout=30)
+
+        for msg, lvl in logs:
+            self.log_signal.emit(msg, lvl)
+
+        if t.is_alive():
+            self.finished.emit(False, "Tempo limite excedido (30s). Verifique servidor PostgreSQL.")
+        else:
+            ok, *rest = out[0]
+            if ok == "ok":
+                self.finished.emit(True, "Banco/usuário criados com sucesso!")
+            else:
+                self.finished.emit(False, rest[0])
 
 
 class FbSetupThread(QThread):
@@ -998,15 +1014,36 @@ class FbSetupThread(QThread):
         super().__init__()
         self.dsn = dsn; self.user = user; self.password = password
     def run(self):
-        slog = SimpleLog(lambda m, l: self.log_signal.emit(m, l))
-        try:
-            from backend.app.migrations import ensure_firebird_tables, seed_firebird_autonomias
-            ensure_firebird_tables(self.dsn, self.user, self.password, slog.log)
-            seed_firebird_autonomias(self.dsn, self.user, self.password, slog.log)
-            self.finished.emit(True, "Firebird preparado com sucesso!")
-        except Exception as e:
-            slog.log(str(e), "ERROR")
-            self.finished.emit(False, str(e))
+        logs = []
+        out = [None]
+        import threading
+        def _do():
+            def log(msg, level="INFO"):
+                logs.append((msg, level))
+            try:
+                from backend.app.migrations import ensure_firebird_tables, seed_firebird_autonomias
+                ensure_firebird_tables(self.dsn, self.user, self.password, log)
+                seed_firebird_autonomias(self.dsn, self.user, self.password, log)
+                out[0] = ("ok",)
+            except Exception as e:
+                log(str(e), "ERROR")
+                out[0] = ("error", str(e))
+
+        t = threading.Thread(target=_do, daemon=True)
+        t.start()
+        t.join(timeout=25)
+
+        for msg, lvl in logs:
+            self.log_signal.emit(msg, lvl)
+
+        if t.is_alive():
+            self.finished.emit(False, "Tempo limite excedido (25s). Verifique servidor e caminho do banco.")
+        else:
+            kind, *rest = out[0]
+            if kind == "ok":
+                self.finished.emit(True, "Firebird preparado com sucesso!")
+            else:
+                self.finished.emit(False, rest[0])
 
 
 class PgMigrationsThread(QThread):
@@ -1017,180 +1054,182 @@ class PgMigrationsThread(QThread):
         self.dsn = dsn
 
     def run(self):
-        slog = SimpleLog(lambda m, l: self.log_signal.emit(m, l))
-        try:
-            from sqlalchemy import create_engine, Column, String, Text, Boolean, DateTime, ForeignKey, Integer
-            from sqlalchemy.orm import declarative_base
-            from sqlalchemy.dialects.postgresql import UUID, JSON
-            from backend.app.migrations import run_pg_migrations
-            import uuid as _uuid
-            from datetime import datetime, timezone
+        logs = []
+        out = [None]
+        import threading
+        def _do():
+            def log(msg, level="INFO"):
+                logs.append((msg, level))
+            try:
+                from sqlalchemy import create_engine, Column, String, Text, Boolean, DateTime, ForeignKey, Integer
+                from sqlalchemy.orm import declarative_base
+                from sqlalchemy.dialects.postgresql import UUID, JSON
+                from backend.app.migrations import run_pg_migrations
+                import uuid as _uuid
+                from datetime import datetime, timezone
 
-            Base = declarative_base()
+                Base = declarative_base()
 
-            models = {}
+                class User(Base):
+                    __tablename__ = "users"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    username = Column(String(50), unique=True, nullable=False, index=True)
+                    email = Column(String(255), unique=True, nullable=False)
+                    hashed_password = Column(String(255), nullable=False)
+                    role = Column(String(20), nullable=False, default="user")
+                    is_active = Column(Boolean, default=True)
+                    cobranca_cooldown_hours = Column(Integer, nullable=False, default=48)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    eco_usuario = Column(String(50), nullable=True, index=True)
+                    eco_empresa = Column(String(20), nullable=True)
+                    tab_permissions = Column(JSON, nullable=True)
 
-            class User(Base):
-                __tablename__ = "users"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                username = Column(String(50), unique=True, nullable=False, index=True)
-                email = Column(String(255), unique=True, nullable=False)
-                hashed_password = Column(String(255), nullable=False)
-                role = Column(String(20), nullable=False, default="user")
-                is_active = Column(Boolean, default=True)
-                cobranca_cooldown_hours = Column(Integer, nullable=False, default=48)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                eco_usuario = Column(String(50), nullable=True, index=True)
-                eco_empresa = Column(String(20), nullable=True)
-                tab_permissions = Column(JSON, nullable=True)
+                class Template(Base):
+                    __tablename__ = "templates"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    name = Column(String(100), nullable=False)
+                    body = Column(Text, nullable=False)
+                    description = Column(Text, nullable=True)
+                    parameter_count = Column(Integer, nullable=False, default=0)
+                    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+                    is_active = Column(Boolean, default=True)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+                    eco_empresa = Column(String(20), nullable=True, index=True)
+                    meta_template_id = Column(String(100), nullable=True)
+                    meta_status = Column(String(20), nullable=True)
 
-            class Template(Base):
-                __tablename__ = "templates"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                name = Column(String(100), nullable=False)
-                body = Column(Text, nullable=False)
-                description = Column(Text, nullable=True)
-                parameter_count = Column(Integer, nullable=False, default=0)
-                created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-                is_active = Column(Boolean, default=True)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-                eco_empresa = Column(String(20), nullable=True, index=True)
-                meta_template_id = Column(String(100), nullable=True)
-                meta_status = Column(String(20), nullable=True)
+                class Request(Base):
+                    __tablename__ = "requests"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    template_id = Column(UUID(as_uuid=True), ForeignKey("templates.id"), nullable=False)
+                    client_phone = Column(String(20), nullable=False)
+                    tag = Column(String(30), nullable=True)
+                    link = Column(Text, nullable=True)
+                    status = Column(String(20), nullable=False, default="pending")
+                    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-            class Request(Base):
-                __tablename__ = "requests"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                template_id = Column(UUID(as_uuid=True), ForeignKey("templates.id"), nullable=False)
-                client_phone = Column(String(20), nullable=False)
-                tag = Column(String(30), nullable=True)
-                link = Column(Text, nullable=True)
-                status = Column(String(20), nullable=False, default="pending")
-                created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+                class RequestParameterValue(Base):
+                    __tablename__ = "request_parameter_values"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    request_id = Column(UUID(as_uuid=True), ForeignKey("requests.id", ondelete="CASCADE"), nullable=False)
+                    param_order = Column(Integer, nullable=False)
+                    param_label = Column(String(100), nullable=False)
+                    value = Column(Text, nullable=False)
 
-            class RequestParameterValue(Base):
-                __tablename__ = "request_parameter_values"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                request_id = Column(UUID(as_uuid=True), ForeignKey("requests.id", ondelete="CASCADE"), nullable=False)
-                param_order = Column(Integer, nullable=False)
-                param_label = Column(String(100), nullable=False)
-                value = Column(Text, nullable=False)
+                class IntegrationConfig(Base):
+                    __tablename__ = "integration_configs"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    template_id = Column(UUID(as_uuid=True), ForeignKey("templates.id"), nullable=True)
+                    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+                    name = Column(String(100), default="Manual")
+                    api_url = Column(String(255), nullable=False, default="")
+                    api_token = Column(String(255), nullable=False)
+                    flow_id = Column(String(50), nullable=False, default="")
+                    field_mapping = Column(JSON, nullable=False, default=dict)
+                    is_active = Column(Boolean, default=True)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+                    first_name_field = Column(String(10), default="1")
+                    manual_payload = Column(Text, nullable=True)
+                    manual_headers = Column(JSON, nullable=True)
+                    schedule_enabled = Column(Boolean, default=False)
+                    schedule_preset = Column(String(20), nullable=True)
+                    schedule_days = Column(JSON, nullable=True, default=list)
+                    schedule_time = Column(String(5), nullable=True, default="09:00")
+                    last_run_at = Column(DateTime, nullable=True)
+                    next_run_at = Column(DateTime, nullable=True)
+                    type = Column(String(20), nullable=False, default="normal")
+                    eco_empresa = Column(String(20), nullable=True, index=True)
 
-            class IntegrationConfig(Base):
-                __tablename__ = "integration_configs"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                template_id = Column(UUID(as_uuid=True), ForeignKey("templates.id"), nullable=True)
-                created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-                name = Column(String(100), default="Manual")
-                api_url = Column(String(255), nullable=False, default="")
-                api_token = Column(String(255), nullable=False)
-                flow_id = Column(String(50), nullable=False, default="")
-                field_mapping = Column(JSON, nullable=False, default=dict)
-                is_active = Column(Boolean, default=True)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-                first_name_field = Column(String(10), default="1")
-                manual_payload = Column(Text, nullable=True)
-                manual_headers = Column(JSON, nullable=True)
-                schedule_enabled = Column(Boolean, default=False)
-                schedule_preset = Column(String(20), nullable=True)
-                schedule_days = Column(JSON, nullable=True, default=list)
-                schedule_time = Column(String(5), nullable=True, default="09:00")
-                last_run_at = Column(DateTime, nullable=True)
-                next_run_at = Column(DateTime, nullable=True)
-                type = Column(String(20), nullable=False, default="normal")
-                eco_empresa = Column(String(20), nullable=True, index=True)
+                class AuditLog(Base):
+                    __tablename__ = "audit_logs"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+                    username = Column(String(100), nullable=False)
+                    action = Column(String(100), nullable=False)
+                    entity_type = Column(String(50), nullable=True)
+                    entity_id = Column(String(100), nullable=True)
+                    details = Column(JSON, nullable=True)
+                    ip_address = Column(String(45), nullable=True)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-            class AuditLog(Base):
-                __tablename__ = "audit_logs"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-                username = Column(String(100), nullable=False)
-                action = Column(String(100), nullable=False)
-                entity_type = Column(String(50), nullable=True)
-                entity_id = Column(String(100), nullable=True)
-                details = Column(JSON, nullable=True)
-                ip_address = Column(String(45), nullable=True)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                class CompanyConfig(Base):
+                    __tablename__ = "company_configs"
+                    company_code = Column(String(20), primary_key=True)
+                    fb_database = Column(String(500), nullable=False, default="")
+                    fb_user = Column(String(50), nullable=False, default="")
+                    fb_password = Column(String(100), nullable=False, default="")
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-            class CompanyConfig(Base):
-                __tablename__ = "company_configs"
-                company_code = Column(String(20), primary_key=True)
-                fb_database = Column(String(500), nullable=False, default="")
-                fb_user = Column(String(50), nullable=False, default="")
-                fb_password = Column(String(100), nullable=False, default="")
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                class MetaCredentials(Base):
+                    __tablename__ = "meta_credentials"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    eco_empresa = Column(String(20), nullable=True, index=True, unique=True)
+                    waba_id = Column(String(100), nullable=False)
+                    phone_number_id = Column(String(100), nullable=False)
+                    access_token = Column(Text, nullable=False)
+                    is_verified = Column(Boolean, default=False)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-            class MetaCredentials(Base):
-                __tablename__ = "meta_credentials"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                eco_empresa = Column(String(20), nullable=True, index=True, unique=True)
-                waba_id = Column(String(100), nullable=False)
-                phone_number_id = Column(String(100), nullable=False)
-                access_token = Column(Text, nullable=False)
-                is_verified = Column(Boolean, default=False)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+                class MetaMessage(Base):
+                    __tablename__ = "meta_messages"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    eco_empresa = Column(String(20), nullable=True, index=True)
+                    from_phone = Column(String(20), nullable=False)
+                    to_phone = Column(String(20), nullable=False)
+                    direction = Column(String(10), nullable=False)
+                    template_name = Column(String(100), nullable=True)
+                    body = Column(Text, nullable=True)
+                    meta_message_id = Column(String(100), nullable=True)
+                    status = Column(String(20), nullable=False, default="sent")
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-            class MetaMessage(Base):
-                __tablename__ = "meta_messages"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                eco_empresa = Column(String(20), nullable=True, index=True)
-                from_phone = Column(String(20), nullable=False)
-                to_phone = Column(String(20), nullable=False)
-                direction = Column(String(10), nullable=False)
-                template_name = Column(String(100), nullable=True)
-                body = Column(Text, nullable=True)
-                meta_message_id = Column(String(100), nullable=True)
-                status = Column(String(20), nullable=False, default="sent")
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                class SqlVariable(Base):
+                    __tablename__ = "sql_variables"
+                    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
+                    name = Column(String(100), nullable=False)
+                    label = Column(String(200), nullable=True)
+                    sql_query = Column(Text, nullable=False)
+                    value_column = Column(Integer, nullable=True)
+                    company_code = Column(String(20), nullable=False, index=True)
+                    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+                    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-            class SqlVariable(Base):
-                __tablename__ = "sql_variables"
-                id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid.uuid4)
-                name = Column(String(100), nullable=False)
-                label = Column(String(200), nullable=True)
-                sql_query = Column(Text, nullable=False)
-                value_column = Column(Integer, nullable=True)
-                company_code = Column(String(20), nullable=False, index=True)
-                created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-                created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-                updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+                eng = create_engine(self.dsn, echo=False)
+                log("Criando tabelas...")
+                Base.metadata.create_all(eng)
+                eng.dispose()
+                log("Tabelas criadas")
 
-            eng = create_engine(self.dsn, echo=False)
-            slog.log("Criando tabelas...")
-            Base.metadata.create_all(eng)
-            eng.dispose()
-            slog.log("Tabelas criadas")
+                run_pg_migrations(self.dsn, log)
+                out[0] = ("ok",)
+            except Exception as e:
+                import traceback
+                log(str(e), "ERROR")
+                for line in traceback.format_exc().splitlines():
+                    log(line, "ERROR")
+                out[0] = ("error", str(e))
 
-            run_pg_migrations(self.dsn, slog.log)
-            self.finished.emit(True, "Migracoes concluidas!")
-        except Exception as e:
-            import traceback
-            slog.log(str(e), "ERROR")
-            for line in traceback.format_exc().splitlines():
-                slog.log(line, "ERROR")
-            self.finished.emit(False, str(e))
+        t = threading.Thread(target=_do, daemon=True)
+        t.start()
+        t.join(timeout=60)
 
+        for msg, lvl in logs:
+            self.log_signal.emit(msg, lvl)
 
-class SeedAdminThread(QThread):
-    log_signal = Signal(str, str)
-    finished = Signal(bool, str)
-    def __init__(self, dsn):
-        super().__init__()
-        self.dsn = dsn
-    def run(self):
-        slog = SimpleLog(lambda m, l: self.log_signal.emit(m, l))
-        try:
-            from backend.app.migrations import seed_admin_user
-            seed_admin_user(self.dsn, log_fn=slog.log)
-            self.finished.emit(True, "Admin verificado/criado!")
-        except Exception as e:
-            slog.log(str(e), "ERROR")
-            self.finished.emit(False, str(e))
+        if t.is_alive():
+            self.finished.emit(False, "Tempo limite excedido (60s). Verifique servidor PostgreSQL.")
+        else:
+            kind, *rest = out[0]
+            if kind == "ok":
+                self.finished.emit(True, "Migracoes concluidas!")
+            else:
+                self.finished.emit(False, rest[0])
 
 
 # ── MAIN WINDOW ──
@@ -1251,7 +1290,10 @@ class ConfiguradorWindow(QMainWindow):
         ]
         for page in self._pages:
             self._stack.addWidget(page)
-        right.addWidget(self._stack, 1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self._stack)
+        right.addWidget(scroll, 1)
 
         nav = QWidget()
         nav.setFixedHeight(52)
@@ -1260,7 +1302,11 @@ class ConfiguradorWindow(QMainWindow):
         nl.setContentsMargins(16, 8, 16, 8)
 
         self._back_btn = QPushButton("Voltar")
-        self._back_btn.setProperty("ghost", True)
+        self._back_btn.setStyleSheet(f"""
+            QPushButton {{ background-color: transparent; color: {ECO['blue']}; border: 1.5px solid {ECO['blue']}; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; }}
+            QPushButton:hover {{ background-color: {ECO['blue']}; color: white; }}
+            QPushButton:disabled {{ background-color: #8899aa; color: white; border: none; }}
+        """)
         self._back_btn.clicked.connect(self._prev)
         nl.addWidget(self._back_btn)
         nl.addStretch()

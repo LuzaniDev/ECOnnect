@@ -172,7 +172,8 @@ SELECT {paginacao}
        Par.PARCELA                                          AS Parcela,
        ''                                                   AS NossoNumero,
        ''                                                   AS NumeroBoleto,
-       Par.UltimoRecebimento
+        Par.UltimoRecebimento,
+        Par.Situacao
   FROM TRecParcela Par
  INNER JOIN TRecDocumento Doc
     ON Doc.Empresa   = Par.Empresa
@@ -193,9 +194,8 @@ SELECT {paginacao}
     ON Pmt.Empresa   = Emp.Codigo
  WHERE Par.Empresa          = ?
    AND Par.Vencimento BETWEEN ? AND ?
-   AND Par.ValorPendente    > 0
+   {status_filter}
    AND Par.IdRenegociacao  IS NULL
-   AND Par.Situacao        <> 'A'
    {tipo_filter}
  ORDER BY Par.Vencimento DESC
 """
@@ -210,8 +210,9 @@ VARS_INFO = [
     ("valor_cobranca",      "{valor_cobranca}", 20, "ValorPendente",  "Valor pendente (R$)"),
     ("valor_total",         "{valor_total}", 18, "Valor",             "Valor original do documento (R$)"),
     ("capital_recebido",    "{capital_recebido}", 19, "CapitalRecebido","Capital já recebido (R$)"),
-    ("valor_juros",         "{valor_juros}", 30, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
-    ("valor_multa",         "{valor_multa}", 31, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
+    ("status_cobranca",     "{status_cobranca}", 30, "Situacao",       "Situacao da parcela (P=Paga, etc)"),
+    ("valor_juros",         "{valor_juros}", 31, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
+    ("valor_multa",         "{valor_multa}", 32, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
     ("codigo_barras",       "{codigo_barras}", 999, "Calculado", "Código de barras de 44 dígitos (calculado automaticamente)"),
     ("linha_digitavel",     "{linha_digitavel}", 999, "Calculado", "Linha digitável de 47 dígitos (calculada a partir do código de barras)"),
     ("numero_boleto / num_boleto", "{numero_boleto}", 28, "NumeroBoleto", "Número do boleto"),
@@ -246,6 +247,7 @@ PLACEHOLDER_MAP["codigo_cliente"] = 2
 PLACEHOLDER_MAP["data_vencimento"] = 17
 PLACEHOLDER_MAP["dias_atraso"] = 15
 PLACEHOLDER_MAP["num_boleto"] = 28
+PLACEHOLDER_MAP["status_cobranca"] = 30
 
 DEFAULT_BODY_TEMPLATE = """{
   "phone": "{phone}",
@@ -493,6 +495,24 @@ QTabBar::tab:hover {{
         tipo_row.addStretch()
         filter_layout.addLayout(tipo_row)
 
+        status_row = QHBoxLayout()
+        status_row.setSpacing(12)
+        status_row.addWidget(QLabel("Status:"))
+        self._filtro_status = set()
+        self.btn_filtro_status = QPushButton("Todas")
+        self.btn_filtro_status.setCursor(Qt.PointingHandCursor)
+        self.btn_filtro_status.setMinimumWidth(180)
+        self.btn_filtro_status.setStyleSheet(btn_style)
+        status_items = [("Pagas", "P"), ("Vencidas", "V"), ("A Vencer", "F"), ("Vence Hoje", "H")]
+        self.btn_filtro_status.clicked.connect(
+            lambda: _show_popup(
+                self.btn_filtro_status, status_items, "_filtro_status",
+            )
+        )
+        status_row.addWidget(self.btn_filtro_status)
+        status_row.addStretch()
+        filter_layout.addLayout(status_row)
+
         self.btn_filtrar = QPushButton("Filtrar")
         self.btn_filtrar.setCursor(Qt.PointingHandCursor)
         self.btn_filtrar.setStyleSheet(f"""
@@ -547,8 +567,8 @@ QTabBar::tab:hover {{
         layout.addWidget(results_label)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(9)
-        self.table.setHorizontalHeaderLabels(["", "Cód. Cliente", "Cliente", "Celular", "Valor Total", "Vencimento", "Dias Atraso", "Já Enviado", "Tempo Restante"])
+        self.table.setColumnCount(10)
+        self.table.setHorizontalHeaderLabels(["", "Cód. Cliente", "Cliente", "Celular", "Valor Total", "Vencimento", "Dias Atraso", "Status", "Já Enviado", "Tempo Restante"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.table.horizontalHeader().resizeSection(0, 40)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -559,6 +579,7 @@ QTabBar::tab:hover {{
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeToContents)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -648,6 +669,18 @@ QTabBar::tab:hover {{
         """)
         self.btn_calculadora.clicked.connect(self._open_calculadora)
         template_row.addWidget(self.btn_calculadora)
+
+        self.btn_editar = QPushButton("Editar Campos")
+        self.btn_editar.setCursor(Qt.PointingHandCursor)
+        self.btn_editar.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.primary};
+                border-radius: 6px; padding: 8px 20px;
+                font-size: 13px; font-weight: 600; color: {t.primary}; }}
+            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.15); }}
+        """)
+        self.btn_editar.clicked.connect(self._editar_campos_selecionados)
+        self.btn_editar.setEnabled(False)
+        template_row.addWidget(self.btn_editar)
 
         self.btn_cancelar = QPushButton("Cancelar")
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
@@ -2023,6 +2056,11 @@ QTabBar::tab:hover {{
         if selected_tipos:
             tipos_str = ",".join(f"'{t}'" for t in selected_tipos)
             filtros.append(f"AND Clg.TIPOCLIENTE IN ({tipos_str})")
+        selected_status = list(self._filtro_status)
+        if "P" in selected_status:
+            status_filter = "AND Par.Situacao = 'P'"
+        else:
+            status_filter = "AND Par.ValorPendente > 0 AND Par.Situacao <> 'A'"
 
         pag_sql = ""
         pag_params: tuple = ()
@@ -2037,6 +2075,7 @@ QTabBar::tab:hover {{
                              f"rota={self._page}")
 
         sql = COBRANCA_SQL.format(
+            status_filter=status_filter,
             tipo_filter=" ".join(filtros),
             paginacao=pag_sql,
         )
@@ -2103,6 +2142,21 @@ QTabBar::tab:hover {{
                     vm = pendente * (multa_val / 100.0) if pendente else 0
                     rl.append(vj)
                     rl.append(vm)
+                    raw_atraso = atrazo_val if venc else 0
+                    if selected_status:
+                        situacao = str(rl[30] or "").strip().upper() if len(rl) > 30 else ""
+                        _pass = False
+                        for s in selected_status:
+                            if s == "V" and raw_atraso > 0 and situacao != "P":
+                                _pass = True
+                            elif s == "F" and raw_atraso < 0 and situacao != "P":
+                                _pass = True
+                            elif s == "H" and raw_atraso == 0 and situacao != "P":
+                                _pass = True
+                            elif s == "P" and situacao == "P":
+                                _pass = True
+                        if not _pass:
+                            continue
                     filtered.append(tuple(rl))
                 self._hidden_clients_data = []
                 hidden_count = 0
@@ -2341,6 +2395,27 @@ QTabBar::tab:hover {{
                     atraso = str(r[15]) if r[15] is not None else "0"
                     self.table.setItem(row, 6, QTableWidgetItem(f"{atraso} dias"))
 
+                    situacao = str(r[30] or "").strip().upper() if len(r) > 30 else ""
+                    from datetime import date as _sd
+                    _hoje = _sd.today()
+                    venc_date = r[17]
+                    raw_atraso = (_hoje - venc_date).days if venc_date else 0
+                    if situacao == "P":
+                        status_text = "Paga"
+                        status_color = t.success
+                    elif raw_atraso > 0:
+                        status_text = f"Vencida ({raw_atraso} dia(s))"
+                        status_color = t.danger
+                    elif raw_atraso == 0:
+                        status_text = "Vence hoje"
+                        status_color = t.warning
+                    else:
+                        status_text = f"A vencer ({-raw_atraso} dia(s))"
+                        status_color = t.success
+                    sit_item = QTableWidgetItem(status_text)
+                    sit_item.setForeground(QColor(status_color))
+                    self.table.setItem(row, 7, sit_item)
+
                     phone = celular
                     sent_info = sent_status.get(phone, {})
                     ja_enviado = sent_info.get("sent", False)
@@ -2348,7 +2423,7 @@ QTabBar::tab:hover {{
 
                     env_item = QTableWidgetItem("Sim" if ja_enviado else "Não")
                     env_item.setForeground(QColor(t.success) if ja_enviado else QColor(t.danger))
-                    self.table.setItem(row, 7, env_item)
+                    self.table.setItem(row, 8, env_item)
 
                     if ja_enviado and remaining > 0:
                         resto = f"{remaining:.0f}h restantes"
@@ -2369,7 +2444,7 @@ QTabBar::tab:hover {{
                                 it.setBackground(QColor(int(parts[0]), int(parts[1]), int(parts[2]), 20))
                     else:
                         resto_item = QTableWidgetItem("-")
-                    self.table.setItem(row, 8, resto_item)
+                    self.table.setItem(row, 9, resto_item)
             finally:
                 self.table.blockSignals(False)
             logger.info("TABLE", f"Tabela populada com {len(rows)} linhas")
@@ -2401,6 +2476,7 @@ QTabBar::tab:hover {{
         self.btn_enviar.setEnabled(count > 0 and self.cmb_template.currentData() is not None)
         self.btn_agendar.setEnabled(count > 0 and self.cmb_template.currentData() is not None)
         self.btn_cancelar.setEnabled(count > 0)
+        self.btn_editar.setEnabled(count > 0)
         self.btn_ver_boletos.setEnabled(count > 0 and self._results_data is not None)
 
     def _cancelar_selecao(self):
@@ -2410,6 +2486,129 @@ QTabBar::tab:hover {{
             if item:
                 item.setCheckState(Qt.Unchecked)
         self._update_selected_count()
+
+    # ================== EDIT PLACEHOLDERS ==================
+
+    _EDITABLE_FIELDS = [
+        ("phone", 5, "Telefone", "Fone"),
+        ("endereco", 6, "Endereco", "Endereco"),
+        ("numero", 7, "Numero", "NumeroEndereco"),
+        ("bairro", 8, "Bairro", "Bairro"),
+        ("regiao", 9, "Regiao", "Regiao"),
+        ("cidade", 10, "Cidade", "Cidade"),
+    ]
+
+    def _editar_campos_selecionados(self):
+        if not self._selected_rows:
+            return
+        t = theme_manager.current()
+        cod_cliente = str(self._results_data[0][2]) if self._results_data else ""
+        empresa = str(self._results_data[0][0]) if self._results_data else "01"
+
+        for idx in sorted(self._selected_rows):
+            row = self._results_data[idx]
+            cliente_nome = str(row[3]) if row[3] else f"Codigo {row[2]}"
+            campos_vazios = []
+            for name, col, label, _ in self._EDITABLE_FIELDS:
+                if col < len(row) and (row[col] is None or str(row[col]).strip() == ""):
+                    campos_vazios.append((name, col, label))
+            if not campos_vazios:
+                continue
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"Editar Campos - {cliente_nome}")
+            dlg.setMinimumWidth(420)
+            dlg.setStyleSheet(f"""
+                QDialog {{ background-color: {t.bg}; color: {t.text}; }}
+                QLabel {{ color: {t.text}; font-size: 12px; }}
+                QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
+                    border-radius: 4px; padding: 6px; color: {t.text};
+                    font-size: 12px; }}
+                QLineEdit:focus {{ border-color: {t.primary}; }}
+            """)
+            lo = QVBoxLayout(dlg)
+            lo.setSpacing(10)
+            lo.setContentsMargins(16, 16, 16, 16)
+
+            inputs = {}
+            for name, col, label in campos_vazios:
+                lo.addWidget(QLabel(f"{label}:"))
+                inp = QLineEdit()
+                inp.setPlaceholderText(f"Digite o {label.lower()}...")
+                inputs[name] = inp
+                lo.addWidget(inp)
+
+            btn_salvar = QPushButton("Salvar no Banco")
+            btn_salvar.setStyleSheet(f"""
+                QPushButton {{ background: {t.primary}; color: {t.selection_text};
+                    border: none; border-radius: 6px; padding: 8px 20px;
+                    font-size: 13px; font-weight: 700; }}
+                QPushButton:hover {{ background: {t.primary_hover}; }}
+            """)
+            btn_salvar.clicked.connect(lambda checked, d=dlg: d.accept())
+            btn_pular = QPushButton("Pular")
+            btn_pular.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.border};
+                    border-radius: 6px; padding: 8px 20px;
+                    font-size: 12px; color: {t.text}; }}
+            """)
+            btn_pular.clicked.connect(dlg.reject)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+            btn_row.addWidget(btn_pular)
+            btn_row.addWidget(btn_salvar)
+            lo.addLayout(btn_row)
+
+            if dlg.exec() != QDialog.Accepted:
+                continue
+
+            updates = {}
+            for name, col, label in campos_vazios:
+                val = inputs[name].text().strip()
+                if val:
+                    updates[name] = val
+
+            if not updates:
+                continue
+
+            try:
+                from frontend.app.core.firebird_client import FirebirdClient as _FBC
+                fbc = _FBC()
+                fbc.conectar()
+                set_clauses = []
+                params = []
+                for name, col, label in campos_vazios:
+                    if name in updates:
+                        db_col = dict(self._EDITABLE_FIELDS)[name][3] if False else name
+                        db_col_map = {
+                            "phone": "Fone",
+                            "endereco": "Endereco",
+                            "numero": "NumeroEndereco",
+                            "bairro": "Bairro",
+                            "regiao": "Regiao",
+                            "cidade": "Cidade",
+                        }
+                        db_col = db_col_map.get(name, name)
+                        set_clauses.append(f"{db_col} = ?")
+                        params.append(updates[name])
+                if set_clauses:
+                    params.append(empresa)
+                    params.append(cod_cliente)
+                    sql = f"UPDATE TRecClienteGeral SET {', '.join(set_clauses)} WHERE Empresa = ? AND Codigo = ?"
+                    fbc.executar(sql, tuple(params))
+                fbc.fechar()
+
+                row_list = list(self._results_data[idx])
+                for name, col, label in campos_vazios:
+                    if name in updates:
+                        row_list[col] = updates[name]
+                self._results_data[idx] = tuple(row_list)
+            except Exception as e:
+                show_error(self, "Erro", f"Falha ao salvar no banco:\n{e}")
+
+        self._populate_table(self._results_data, self._sent_check_cache)
+        show_success(self, "Concluido", "Campos atualizados com sucesso!")
 
     # ================== PREVIEW ==================
 
@@ -2472,7 +2671,7 @@ QTabBar::tab:hover {{
         card_layout.setSpacing(8)
 
         phone_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>"""
-        _pi = QImage.fromData(phone_svg.encode(), "SVG")
+        _pi = QImage.fromData(phone_svg.replace("currentColor", t.text_secondary).encode(), "SVG")
         _pp = QPixmap.fromImage(_pi)
         phone_row = QWidget()
         phone_row.setStyleSheet("background: transparent; border: none;")
@@ -2490,7 +2689,7 @@ QTabBar::tab:hover {{
         card_layout.addWidget(phone_row)
 
         user_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>"""
-        _ui = QImage.fromData(user_svg.encode(), "SVG")
+        _ui = QImage.fromData(user_svg.replace("currentColor", t.text_secondary).encode(), "SVG")
         _up = QPixmap.fromImage(_ui)
         nome_row = QWidget()
         nome_row.setStyleSheet("background: transparent; border: none;")
@@ -2528,10 +2727,10 @@ QTabBar::tab:hover {{
             right_col = QVBoxLayout()
             right_col.setSpacing(6)
             right_col.addWidget(self._visual_field("Atraso:", f"{row[15]} dia(s)", t))
-            if len(row) > 30 and row[30] is not None:
-                right_col.addWidget(self._visual_field("Juros:", self._format_valor(row[30]), t))
             if len(row) > 31 and row[31] is not None:
-                right_col.addWidget(self._visual_field("Multa:", self._format_valor(row[31]), t))
+                right_col.addWidget(self._visual_field("Juros:", self._format_valor(row[31]), t))
+            if len(row) > 32 and row[32] is not None:
+                right_col.addWidget(self._visual_field("Multa:", self._format_valor(row[32]), t))
             grid.addLayout(right_col)
 
         card_layout.addWidget(grid_w)
@@ -2577,7 +2776,7 @@ QTabBar::tab:hover {{
                         val_f.setStyleSheet(f"font-size: 11px; color: {t.text}; border: none; background: transparent; font-family: Consolas, monospace;")
                         val_f.setTextInteractionFlags(Qt.TextSelectableByMouse)
                         _cs = """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
-                        _csi = QImage.fromData(_cs.encode(), "SVG")
+                        _csi = QImage.fromData(_cs.replace("currentColor", t.text_secondary).encode(), "SVG")
                         _csi_px = QPixmap.fromImage(_csi)
                         _clip_icon = QIcon(_csi_px)
                         btn_f = QPushButton(_clip_icon, "")
@@ -2600,7 +2799,7 @@ QTabBar::tab:hover {{
 
                 flow_id = flow[0].get("flow_id", "")
                 flow_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>"""
-                _fi = QImage.fromData(flow_svg.encode(), "SVG")
+                _fi = QImage.fromData(flow_svg.replace("currentColor", t.text_secondary).encode(), "SVG")
                 _fp = QPixmap.fromImage(_fi)
                 flow_row = QWidget()
                 flow_row.setStyleSheet("background: transparent; border: none;")
@@ -2658,7 +2857,7 @@ QTabBar::tab:hover {{
 
         if bc_preview:
             copy_svg_clip = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
-            _ci = QImage.fromData(copy_svg_clip.encode(), "SVG")
+            _ci = QImage.fromData(copy_svg_clip.replace("currentColor", t.text_secondary).encode(), "SVG")
             _copy_icon = QIcon(QPixmap.fromImage(_ci))
 
             boleto_container = QWidget()
@@ -2691,7 +2890,7 @@ QTabBar::tab:hover {{
 
             if pdf_caminho:
                 pdf_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>"""
-                _pi = QImage.fromData(pdf_svg.encode(), "SVG")
+                _pi = QImage.fromData(pdf_svg.replace("currentColor", t.text_secondary).encode(), "SVG")
                 _pdf_icon = QIcon(QPixmap.fromImage(_pi))
                 btn_pdf = QPushButton(_pdf_icon, " Abrir PDF")
                 btn_pdf.setIconSize(QSize(18, 18))
@@ -2813,14 +3012,16 @@ QTabBar::tab:hover {{
                 layout.addWidget(lbl)
             else:
                 table = QTableWidget()
-                table.setColumnCount(8)
+                table.setColumnCount(9)
                 table.setHorizontalHeaderLabels([
-                    "Documento", "Parcela", "Vencimento", "Valor Pendente",
+                    "", "Documento", "Parcela", "Vencimento", "Valor Pendente",
                     "Valor Total", "Dias", "Status", "Tipo",
                 ])
-                for c in range(7):
+                table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+                table.horizontalHeader().resizeSection(0, 32)
+                for c in range(1, 8):
                     table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-                table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
+                table.horizontalHeader().setSectionResizeMode(8, QHeaderView.Stretch)
                 table.setAlternatingRowColors(True)
                 table.setEditTriggers(QTableWidget.NoEditTriggers)
                 table.verticalHeader().setVisible(False)
@@ -2828,24 +3029,28 @@ QTabBar::tab:hover {{
 
                 total_pendente = 0
                 for i, r in enumerate(rows):
+                    check_item = QTableWidgetItem("")
+                    check_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                    check_item.setCheckState(Qt.Unchecked)
+                    table.setItem(i, 0, check_item)
                     doc = str(r[0] or "") + "/" + str(r[1] or "")
-                    table.setItem(i, 0, QTableWidgetItem(doc))
-                    table.setItem(i, 1, QTableWidgetItem(str(r[1] or "")))
+                    table.setItem(i, 1, QTableWidgetItem(doc))
+                    table.setItem(i, 2, QTableWidgetItem(str(r[1] or "")))
                     venc = r[2]
                     venc_str = str(venc) if venc else "-"
-                    table.setItem(i, 2, QTableWidgetItem(venc_str))
+                    table.setItem(i, 3, QTableWidgetItem(venc_str))
                     pend = r[3]
                     if pend is not None:
                         v = float(pend)
                         total_pendente += v
-                        table.setItem(i, 3, QTableWidgetItem(f"R$ {v:.2f}"))
-                    else:
-                        table.setItem(i, 3, QTableWidgetItem("-"))
-                    total = r[4]
-                    if total is not None:
-                        table.setItem(i, 4, QTableWidgetItem(f"R$ {float(total):.2f}"))
+                        table.setItem(i, 4, QTableWidgetItem(f"R$ {v:.2f}"))
                     else:
                         table.setItem(i, 4, QTableWidgetItem("-"))
+                    total = r[4]
+                    if total is not None:
+                        table.setItem(i, 5, QTableWidgetItem(f"R$ {float(total):.2f}"))
+                    else:
+                        table.setItem(i, 5, QTableWidgetItem("-"))
 
                     situacao = str(r[5] or "").strip().upper()
                     atraso = 0
@@ -2870,10 +3075,10 @@ QTabBar::tab:hover {{
                         status_text = f"A vencer ({-atraso} dia(s))"
                         status_color = t.success
 
-                    table.setItem(i, 5, QTableWidgetItem(str(atraso) if venc else "-"))
+                    table.setItem(i, 6, QTableWidgetItem(str(atraso) if venc else "-"))
                     sit_item = QTableWidgetItem(status_text)
                     sit_item.setForeground(QColor(status_color))
-                    table.setItem(i, 6, sit_item)
+                    table.setItem(i, 7, sit_item)
 
                     nome_carteira = str(r[6] or "").strip()
                     if nome_carteira:
@@ -2883,13 +3088,49 @@ QTabBar::tab:hover {{
                         tipo_map = {"DUP": "Duplicata", "CHQ": "Cheque", "BOL": "Boleto",
                                     "CAR": "Cartao", "NP": "Nota Promissoria", "REC": "Recibo"}
                         tipo_text = tipo_map.get(abrev, abrev)
-                    table.setItem(i, 7, QTableWidgetItem(tipo_text))
+                    table.setItem(i, 8, QTableWidgetItem(tipo_text))
 
                 layout.addWidget(table)
 
                 lbl_total = QLabel(f"Total pendente: R$ {total_pendente:.2f}  |  {len(rows)} parcela(s)")
                 lbl_total.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600; padding: 4px 0;")
                 layout.addWidget(lbl_total)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+
+            if rows:
+                btn_adicionar = QPushButton("Adicionar Selecionados ao Lote")
+                btn_adicionar.setStyleSheet(f"""
+                    QPushButton {{ background: {t.warning}; color: {t.selection_text}; border: none;
+                        border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 600; }}
+                    QPushButton:hover {{ opacity: 0.85; }}
+                """)
+                def _adicionar_ao_lote():
+                    cod_cliente = str(row[2]) if row[2] else ""
+                    emp = str(row[0]) if row[0] else ""
+                    added = 0
+                    for i in range(table.rowCount()):
+                        item = table.item(i, 0)
+                        if item and item.checkState() == Qt.Checked:
+                            for ridx, rrow in enumerate(self._results_data):
+                                if str(rrow[2]) == cod_cliente and str(rrow[0]) == emp:
+                                    if ridx not in self._selected_rows:
+                                        self._selected_rows.add(ridx)
+                                        added += 1
+                    self._update_selected_count()
+                    if added:
+                        for rrow in range(self.table.rowCount()):
+                            ritem = self.table.item(rrow, 0)
+                            if ritem:
+                                idx = ritem.data(Qt.UserRole)
+                                if idx in self._selected_rows:
+                                    ritem.setCheckState(Qt.Checked)
+                    show_success(dlg, "Adicionado", f"{added} pendencia(s) adicionada(s) ao lote.")
+                    dlg.accept()
+                btn_adicionar.clicked.connect(_adicionar_ao_lote)
+                btn_row.addWidget(btn_adicionar)
+                btn_row.addSpacing(12)
 
             btn_fechar = QPushButton("Fechar")
             btn_fechar.setStyleSheet(f"""
@@ -2898,7 +3139,8 @@ QTabBar::tab:hover {{
                 QPushButton:hover {{ background: {t.primary_hover}; }}
             """)
             btn_fechar.clicked.connect(dlg.accept)
-            layout.addWidget(btn_fechar, 0, Qt.AlignCenter)
+            btn_row.addWidget(btn_fechar)
+            layout.addLayout(btn_row)
 
             dlg.exec()
 
@@ -3020,6 +3262,21 @@ QTabBar::tab:hover {{
                     primeiro = erros[0]
                     erro_detalhe = primeiro.get("error") or f"HTTP {primeiro.get('status')}"
                     msg += f"\n\nExemplo de erro: {erro_detalhe}"
+            cd_config = self._load_tag_cooldown_config()
+            cd_hours = cd_config.get(tag, 48)
+            for d in results["details"]:
+                if d.get("ok"):
+                    idx = d["idx"]
+                    if idx < len(self._results_data):
+                        row = self._results_data[idx]
+                        phone = str(row[5]).strip() if row[5] else ""
+                        if phone:
+                            self._sent_check_cache[phone] = {
+                                "sent": True,
+                                "remaining_hours": cd_hours,
+                                "last_sent_at": datetime.now().isoformat(),
+                            }
+            self._populate_table(self._results_data, self._sent_check_cache)
             show_success(self, "Resultado do Envio", msg)
             self._cancelar_selecao()
 

@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import httpx
 import uuid
 import concurrent.futures
@@ -163,9 +164,9 @@ SELECT {paginacao}
        Par.Valor,
        (Par.Valor - Par.ValorPendente)                     AS CapitalRecebido,
        Par.ValorPendente,
-       0                                                    AS Multa,
-       COALESCE(NULLIF(Cli.JurosAtraso, 0), 0)             AS Juros,
-       ''                                                   AS TipoJuro,
+        COALESCE(Pmt.Multa, 0)                              AS Multa,
+        COALESCE(NULLIF(Cli.JurosAtraso, 0), Pmt.Juros, 0)  AS Juros,
+        COALESCE(Pmt.TipoJuro, '')                           AS TipoJuro,
        Par.IDTRECPARCELA,
        Par.PORTADOR,
        Par.PARCELA                                          AS Parcela,
@@ -188,6 +189,8 @@ SELECT {paginacao}
     ON Clg.Codigo    = Cli.Codigo
  INNER JOIN TGerEmpresa Emp
     ON Emp.Codigo    = Par.Empresa
+  LEFT JOIN TRecParametro Pmt
+    ON Pmt.Empresa   = Emp.Codigo
  WHERE Par.Empresa          = ?
    AND Par.Vencimento BETWEEN ? AND ?
    AND Par.ValorPendente    > 0
@@ -2468,13 +2471,41 @@ QTabBar::tab:hover {{
         card_layout.setContentsMargins(16, 14, 16, 14)
         card_layout.setSpacing(8)
 
-        lbl_phone = QLabel(f"📱  Para:  {phone}")
-        lbl_phone.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t.text}; border: none;")
-        card_layout.addWidget(lbl_phone)
+        phone_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>"""
+        _pi = QImage.fromData(phone_svg.encode(), "SVG")
+        _pp = QPixmap.fromImage(_pi)
+        phone_row = QWidget()
+        phone_row.setStyleSheet("background: transparent; border: none;")
+        phone_lo = QHBoxLayout(phone_row)
+        phone_lo.setContentsMargins(0, 0, 0, 0)
+        phone_lo.setSpacing(6)
+        phone_icon = QLabel()
+        phone_icon.setPixmap(_pp.scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        phone_icon.setStyleSheet("background: transparent; border: none;")
+        phone_lo.addWidget(phone_icon)
+        lbl_phone = QLabel(f"Para:  {phone}")
+        lbl_phone.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t.text}; border: none; background: transparent;")
+        phone_lo.addWidget(lbl_phone)
+        phone_lo.addStretch()
+        card_layout.addWidget(phone_row)
 
-        lbl_nome = QLabel(f"👤  Cliente:  {nome}")
-        lbl_nome.setStyleSheet(f"font-size: 13px; color: {t.text}; border: none;")
-        card_layout.addWidget(lbl_nome)
+        user_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>"""
+        _ui = QImage.fromData(user_svg.encode(), "SVG")
+        _up = QPixmap.fromImage(_ui)
+        nome_row = QWidget()
+        nome_row.setStyleSheet("background: transparent; border: none;")
+        nome_lo = QHBoxLayout(nome_row)
+        nome_lo.setContentsMargins(0, 0, 0, 0)
+        nome_lo.setSpacing(6)
+        nome_icon = QLabel()
+        nome_icon.setPixmap(_up.scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        nome_icon.setStyleSheet("background: transparent; border: none;")
+        nome_lo.addWidget(nome_icon)
+        lbl_nome = QLabel(f"Cliente:  {nome}")
+        lbl_nome.setStyleSheet(f"font-size: 13px; color: {t.text}; border: none; background: transparent;")
+        nome_lo.addWidget(lbl_nome)
+        nome_lo.addStretch()
+        card_layout.addWidget(nome_row)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
@@ -2489,16 +2520,18 @@ QTabBar::tab:hover {{
 
         left_col = QVBoxLayout()
         left_col.setSpacing(6)
-        left_col.addWidget(self._visual_field("💰 Valor:", valor, t))
-        left_col.addWidget(self._visual_field("📅 Vencimento:", venc, t))
+        left_col.addWidget(self._visual_field("Valor:", valor, t))
+        left_col.addWidget(self._visual_field("Vencimento:", venc, t))
         grid.addLayout(left_col)
 
         if len(row) > 15 and row[15] is not None:
             right_col = QVBoxLayout()
             right_col.setSpacing(6)
-            right_col.addWidget(self._visual_field("⏱  Atraso:", f"{row[15]} dia(s)", t))
-            if len(row) > 24 and row[24] is not None:
-                right_col.addWidget(self._visual_field("📊 Juros:", self._format_valor(row[24]), t))
+            right_col.addWidget(self._visual_field("Atraso:", f"{row[15]} dia(s)", t))
+            if len(row) > 30 and row[30] is not None:
+                right_col.addWidget(self._visual_field("Juros:", self._format_valor(row[30]), t))
+            if len(row) > 31 and row[31] is not None:
+                right_col.addWidget(self._visual_field("Multa:", self._format_valor(row[31]), t))
             grid.addLayout(right_col)
 
         card_layout.addWidget(grid_w)
@@ -2543,7 +2576,12 @@ QTabBar::tab:hover {{
                         val_f = QLabel(fv)
                         val_f.setStyleSheet(f"font-size: 11px; color: {t.text}; border: none; background: transparent; font-family: Consolas, monospace;")
                         val_f.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                        btn_f = QPushButton("📋")
+                        _cs = """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
+                        _csi = QImage.fromData(_cs.encode(), "SVG")
+                        _csi_px = QPixmap.fromImage(_csi)
+                        _clip_icon = QIcon(_csi_px)
+                        btn_f = QPushButton(_clip_icon, "")
+                        btn_f.setIconSize(QSize(14, 14))
                         btn_f.setToolTip(f"Copiar {label.lower()}")
                         btn_f.setStyleSheet(f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.text}; padding: 2px 8px; font-size: 11px; }} QPushButton:hover {{ background: {t.primary}; color: #fff; }}")
                         btn_f.clicked.connect(lambda _, v=fv: QApplication.clipboard().setText(v))
@@ -2561,9 +2599,23 @@ QTabBar::tab:hover {{
                 card_layout.addWidget(sep3)
 
                 flow_id = flow[0].get("flow_id", "")
-                lbl_flow = QLabel(f"🚀 Fluxo: #{flow_id}")
+                flow_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>"""
+                _fi = QImage.fromData(flow_svg.encode(), "SVG")
+                _fp = QPixmap.fromImage(_fi)
+                flow_row = QWidget()
+                flow_row.setStyleSheet("background: transparent; border: none;")
+                flow_lo = QHBoxLayout(flow_row)
+                flow_lo.setContentsMargins(0, 0, 0, 0)
+                flow_lo.setSpacing(6)
+                flow_icon = QLabel()
+                flow_icon.setPixmap(_fp.scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                flow_icon.setStyleSheet("background: transparent; border: none;")
+                flow_lo.addWidget(flow_icon)
+                lbl_flow = QLabel(f"Fluxo: #{flow_id}")
                 lbl_flow.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {t.accent_blue}; border: none; background: transparent;")
-                card_layout.addWidget(lbl_flow)
+                flow_lo.addWidget(lbl_flow)
+                flow_lo.addStretch()
+                card_layout.addWidget(flow_row)
         except json.JSONDecodeError:
             pass
 
@@ -2638,7 +2690,6 @@ QTabBar::tab:hover {{
             boleto_layout.addWidget(_make_copy_row("Linha Digit\u00e1vel", ld_preview, t))
 
             if pdf_caminho:
-                import os as _os
                 pdf_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>"""
                 _pi = QImage.fromData(pdf_svg.encode(), "SVG")
                 _pdf_icon = QIcon(QPixmap.fromImage(_pi))
@@ -2650,7 +2701,7 @@ QTabBar::tab:hover {{
                         border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; }}
                     QPushButton:hover {{ opacity: 0.85; }}
                 """)
-                btn_pdf.clicked.connect(lambda: _os.startfile(pdf_caminho))
+                btn_pdf.clicked.connect(lambda: subprocess.Popen(["explorer", pdf_caminho]))
                 boleto_layout.addWidget(btn_pdf)
 
             boleto_layout.addStretch()

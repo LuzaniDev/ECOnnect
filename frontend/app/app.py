@@ -147,33 +147,35 @@ class MainWindow(QMainWindow):
             self._loading_overlay = None
 
     def _start_initial_scan(self):
-        logger.info("APP", "Verificando se scan de boletos e necessario...")
         total = 0
         try:
-            from frontend.app.services.boleto_watcher import verificar_scan_necessario, executar_scan_completo
+            from frontend.app.services.boleto_watcher import executar_scan_completo
+            from frontend.app.config import settings as _st
 
-            self._loading_overlay.set_indeterminate("Verificando boletos pendentes...")
-            QApplication.processEvents()
+            resp = QMessageBox.question(
+                self, "Processar Boletos",
+                "Deseja processar os ultimos "
+                f"{_st.MAX_PDFS_PER_SCAN} boletos agora?\n\n"
+                "Isso pode levar alguns minutos, "
+                "mas seus dados ficarao completos.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
 
-            precisa = verificar_scan_necessario()
-            if not precisa:
-                logger.info("APP", "Scan nao necessario — 10 ultimos boletos ja estao no banco")
+            if resp == QMessageBox.Yes:
+                logger.info(
+                    "APP",
+                    f"Processando ultimos {_st.MAX_PDFS_PER_SCAN} boletos...")
+                self._loading_overlay.set_indeterminate(
+                    "Processando boletos...")
+                QApplication.processEvents()
+                total = executar_scan_completo(
+                    max_pdfs=_st.MAX_PDFS_PER_SCAN)
+                logger.info(
+                    "APP",
+                    f"Scan concluido: {total} boletos processados")
             else:
-                from frontend.app.config import settings as _st
-                resp = QMessageBox.question(
-                    self, "Processar Boletos",
-                    "Um ou mais boletos recentes estao faltando no banco de dados.\n\n"
-                    f"Deseja processar ate {_st.MAX_PDFS_PER_SCAN} boletos agora?\n"
-                    "Isso pode levar alguns minutos.",
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-                if resp == QMessageBox.Yes:
-                    logger.info("APP", f"Scan necessario — iniciando processamento (max {_st.MAX_PDFS_PER_SCAN})...")
-                    self._loading_overlay.set_indeterminate("Processando boletos...")
-                    QApplication.processEvents()
-                    total = executar_scan_completo(max_pdfs=_st.MAX_PDFS_PER_SCAN)
-                    logger.info("APP", f"Scan concluido: {total} boletos processados")
-                else:
-                    logger.info("APP", "Usuario optou por nao processar boletos agora")
+                logger.info(
+                    "APP",
+                    "Usuario optou por nao processar boletos agora")
         except Exception as e:
             logger.error("APP", f"Erro no scan de boletos: {e}")
             import traceback
@@ -181,7 +183,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "_loading_overlay") and self._loading_overlay:
             self._loading_overlay.set_indeterminate(
-                f"{total} boletos processados" if total else "Nenhum boleto pendente")
+                f"{total} boletos processados"
+                if total else "Nenhum boleto pendente")
             from PySide6.QtCore import QTimer
             QTimer.singleShot(800, self._pos_scan)
 

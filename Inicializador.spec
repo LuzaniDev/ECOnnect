@@ -59,6 +59,7 @@ exe = EXE(
     a.datas,
     [],
     name='ECOnnectInicializador',
+    icon='frontend/assets/app_icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

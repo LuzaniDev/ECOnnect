@@ -37,6 +37,7 @@ exe = EXE(
     a.datas,
     [],
     name='ECOnnect',
+    icon='frontend/assets/app_icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

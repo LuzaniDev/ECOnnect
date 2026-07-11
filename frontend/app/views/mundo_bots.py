@@ -567,8 +567,8 @@ QTabBar::tab:hover {{
         layout.addWidget(results_label)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(10)
-        self.table.setHorizontalHeaderLabels(["", "Cód. Cliente", "Cliente", "Celular", "Valor Total", "Vencimento", "Dias Atraso", "Status", "Já Enviado", "Tempo Restante"])
+        self.table.setColumnCount(9)
+        self.table.setHorizontalHeaderLabels(["", "Cód. Cliente", "Cliente", "Celular", "Valor Total", "Vencimento", "Status", "Já Enviado", "Tempo Restante"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.table.horizontalHeader().resizeSection(0, 40)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -579,7 +579,6 @@ QTabBar::tab:hover {{
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeToContents)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -2392,9 +2391,6 @@ QTabBar::tab:hover {{
                     self.table.setItem(row, 4, QTableWidgetItem(self._format_valor(r[20])))
                     venc = self._format_date(r[17])
                     self.table.setItem(row, 5, QTableWidgetItem(venc))
-                    atraso = str(r[15]) if r[15] is not None else "0"
-                    self.table.setItem(row, 6, QTableWidgetItem(f"{atraso} dias"))
-
                     situacao = str(r[30] or "").strip().upper() if len(r) > 30 else ""
                     from datetime import date as _sd
                     _hoje = _sd.today()
@@ -2414,16 +2410,30 @@ QTabBar::tab:hover {{
                         status_color = t.success
                     sit_item = QTableWidgetItem(status_text)
                     sit_item.setForeground(QColor(status_color))
-                    self.table.setItem(row, 7, sit_item)
+                    self.table.setItem(row, 6, sit_item)
 
                     phone = celular
-                    sent_info = sent_status.get(phone, {})
+                    sent_info = sent_status.get(phone)
+                    if sent_info is None:
+                        local = self._check_tag_cooldown(phone, "cobrança")
+                        cd_config = self._load_tag_cooldown_config()
+                        cd_hours = cd_config.get("cobrança", 48)
+                        if local.get("blocked"):
+                            sent_info = {"sent": True, "remaining_hours": local.get("remaining_hours", cd_hours)}
+                        else:
+                            history = self._load_sent_history()
+                            for entry in reversed(history):
+                                if entry.get("phone") == phone and entry.get("tag") == "cobrança":
+                                    sent_info = {"sent": True, "remaining_hours": 0}
+                                    break
+                            else:
+                                sent_info = {"sent": False, "remaining_hours": 0}
                     ja_enviado = sent_info.get("sent", False)
                     remaining = sent_info.get("remaining_hours", 0)
 
                     env_item = QTableWidgetItem("Sim" if ja_enviado else "Não")
                     env_item.setForeground(QColor(t.success) if ja_enviado else QColor(t.danger))
-                    self.table.setItem(row, 8, env_item)
+                    self.table.setItem(row, 7, env_item)
 
                     if ja_enviado and remaining > 0:
                         resto = f"{remaining:.0f}h restantes"
@@ -2444,7 +2454,7 @@ QTabBar::tab:hover {{
                                 it.setBackground(QColor(int(parts[0]), int(parts[1]), int(parts[2]), 20))
                     else:
                         resto_item = QTableWidgetItem("-")
-                    self.table.setItem(row, 9, resto_item)
+                    self.table.setItem(row, 8, resto_item)
             finally:
                 self.table.blockSignals(False)
             logger.info("TABLE", f"Tabela populada com {len(rows)} linhas")
@@ -2491,6 +2501,7 @@ QTabBar::tab:hover {{
 
     _EDITABLE_FIELDS = [
         ("phone", 5, "Telefone", "Fone"),
+        ("nome", 3, "Nome", "Nome"),
         ("endereco", 6, "Endereco", "Endereco"),
         ("numero", 7, "Numero", "NumeroEndereco"),
         ("bairro", 8, "Bairro", "Bairro"),
@@ -2502,18 +2513,13 @@ QTabBar::tab:hover {{
         if not self._selected_rows:
             return
         t = theme_manager.current()
-        cod_cliente = str(self._results_data[0][2]) if self._results_data else ""
-        empresa = str(self._results_data[0][0]) if self._results_data else "01"
+        total_salvos = 0
 
         for idx in sorted(self._selected_rows):
             row = self._results_data[idx]
+            cod_cliente = str(row[2]) if row[2] else ""
+            empresa = str(row[0]) if row[0] else "01"
             cliente_nome = str(row[3]) if row[3] else f"Codigo {row[2]}"
-            campos_vazios = []
-            for name, col, label, _ in self._EDITABLE_FIELDS:
-                if col < len(row) and (row[col] is None or str(row[col]).strip() == ""):
-                    campos_vazios.append((name, col, label))
-            if not campos_vazios:
-                continue
 
             dlg = QDialog(self)
             dlg.setWindowTitle(f"Editar Campos - {cliente_nome}")
@@ -2531,9 +2537,13 @@ QTabBar::tab:hover {{
             lo.setContentsMargins(16, 16, 16, 16)
 
             inputs = {}
-            for name, col, label in campos_vazios:
+            for name, col, label, _ in self._EDITABLE_FIELDS:
+                if col >= len(row):
+                    continue
                 lo.addWidget(QLabel(f"{label}:"))
                 inp = QLineEdit()
+                val_atual = str(row[col]) if row[col] is not None else ""
+                inp.setText(val_atual)
                 inp.setPlaceholderText(f"Digite o {label.lower()}...")
                 inputs[name] = inp
                 lo.addWidget(inp)
@@ -2564,10 +2574,13 @@ QTabBar::tab:hover {{
                 continue
 
             updates = {}
-            for name, col, label in campos_vazios:
+            for name, col, label, _ in self._EDITABLE_FIELDS:
+                if col >= len(row):
+                    continue
                 val = inputs[name].text().strip()
-                if val:
-                    updates[name] = val
+                val_atual = str(row[col]) if row[col] is not None else ""
+                if val and val != val_atual:
+                    updates[name] = (col, val)
 
             if not updates:
                 continue
@@ -2578,20 +2591,19 @@ QTabBar::tab:hover {{
                 fbc.conectar()
                 set_clauses = []
                 params = []
-                for name, col, label in campos_vazios:
-                    if name in updates:
-                        db_col = dict(self._EDITABLE_FIELDS)[name][3] if False else name
-                        db_col_map = {
-                            "phone": "Fone",
-                            "endereco": "Endereco",
-                            "numero": "NumeroEndereco",
-                            "bairro": "Bairro",
-                            "regiao": "Regiao",
-                            "cidade": "Cidade",
-                        }
-                        db_col = db_col_map.get(name, name)
-                        set_clauses.append(f"{db_col} = ?")
-                        params.append(updates[name])
+                db_col_map = {
+                    "phone": "Fone",
+                    "nome": "Nome",
+                    "endereco": "Endereco",
+                    "numero": "NumeroEndereco",
+                    "bairro": "Bairro",
+                    "regiao": "Regiao",
+                    "cidade": "Cidade",
+                }
+                for name, (col, val) in updates.items():
+                    db_col = db_col_map.get(name, name)
+                    set_clauses.append(f"{db_col} = ?")
+                    params.append(val)
                 if set_clauses:
                     params.append(empresa)
                     params.append(cod_cliente)
@@ -2600,15 +2612,18 @@ QTabBar::tab:hover {{
                 fbc.fechar()
 
                 row_list = list(self._results_data[idx])
-                for name, col, label in campos_vazios:
-                    if name in updates:
-                        row_list[col] = updates[name]
+                for name, (col, val) in updates.items():
+                    row_list[col] = val
                 self._results_data[idx] = tuple(row_list)
+                total_salvos += 1
             except Exception as e:
                 show_error(self, "Erro", f"Falha ao salvar no banco:\n{e}")
 
-        self._populate_table(self._results_data, self._sent_check_cache)
-        show_success(self, "Concluido", "Campos atualizados com sucesso!")
+        if total_salvos:
+            self._populate_table(self._results_data, self._sent_check_cache)
+            show_success(self, "Concluido", f"{total_salvos} cliente(s) atualizado(s) com sucesso!")
+        else:
+            show_error(self, "Nada alterado", "Nenhum campo foi modificado.")
 
     # ================== PREVIEW ==================
 
@@ -3012,16 +3027,16 @@ QTabBar::tab:hover {{
                 layout.addWidget(lbl)
             else:
                 table = QTableWidget()
-                table.setColumnCount(9)
+                table.setColumnCount(8)
                 table.setHorizontalHeaderLabels([
                     "", "Documento", "Parcela", "Vencimento", "Valor Pendente",
-                    "Valor Total", "Dias", "Status", "Tipo",
+                    "Valor Total", "Status", "Tipo",
                 ])
                 table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
                 table.horizontalHeader().resizeSection(0, 32)
-                for c in range(1, 8):
+                for c in range(1, 7):
                     table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-                table.horizontalHeader().setSectionResizeMode(8, QHeaderView.Stretch)
+                table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
                 table.setAlternatingRowColors(True)
                 table.setEditTriggers(QTableWidget.NoEditTriggers)
                 table.verticalHeader().setVisible(False)
@@ -3075,10 +3090,9 @@ QTabBar::tab:hover {{
                         status_text = f"A vencer ({-atraso} dia(s))"
                         status_color = t.success
 
-                    table.setItem(i, 6, QTableWidgetItem(str(atraso) if venc else "-"))
                     sit_item = QTableWidgetItem(status_text)
                     sit_item.setForeground(QColor(status_color))
-                    table.setItem(i, 7, sit_item)
+                    table.setItem(i, 6, sit_item)
 
                     nome_carteira = str(r[6] or "").strip()
                     if nome_carteira:
@@ -3088,7 +3102,7 @@ QTabBar::tab:hover {{
                         tipo_map = {"DUP": "Duplicata", "CHQ": "Cheque", "BOL": "Boleto",
                                     "CAR": "Cartao", "NP": "Nota Promissoria", "REC": "Recibo"}
                         tipo_text = tipo_map.get(abrev, abrev)
-                    table.setItem(i, 8, QTableWidgetItem(tipo_text))
+                    table.setItem(i, 7, QTableWidgetItem(tipo_text))
 
                 layout.addWidget(table)
 

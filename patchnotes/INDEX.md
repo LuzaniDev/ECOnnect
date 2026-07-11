@@ -2,6 +2,7 @@
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| [v1.5.4](./v1.5.4.md) | 2026-07-11 | Edicao Geral, Status Unificado, Pydantic V2, PyInstaller fix |
 | [v1.5.0](./v1.5.0.md) | 2026-07-08 | ECOnnect Inicializador, path normalization dotenv, correcao firebird_client forward-slash |
 | [v1.4.0](./v1.4.0.md) | 2026-07-07 | ECOnnect Configurador, PyInstaller onefile, correcao circular import frozen |
 | [v1.3.1](./v1.3.1.md) | 2026-07-06 | Graphify, Boleto Watcher (watchdog), Data Pipeline 3D, COBRANCA_SQL otimizada, correções de performance |

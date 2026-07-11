@@ -27,10 +27,15 @@ def _resolve_env_file() -> Path:
     return result
 
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_resolve_env_file(),
+        extra="ignore",
+    )
+
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_USER: str = "econnect"
@@ -49,9 +54,7 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?ssl=disable"
-
-    class Config:
-        env_file = _resolve_env_file()
+        extra = "ignore"
 
 
 _backend_log_config("Criando instancia Settings...")

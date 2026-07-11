@@ -23,8 +23,8 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
-    excludes=['numpy.typing'],
+    runtime_hooks=['rthook_shiboken.py'],
+    excludes=['numpy.typing', 'shibokensupport'],
     noarchive=False,
     optimize=0,
 )

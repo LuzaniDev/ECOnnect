@@ -5,26 +5,28 @@ import httpx
 import uuid
 import concurrent.futures
 from datetime import datetime, date, timedelta
-from PySide6.QtCore import Qt, QDate, QTimer, QDateTime, QSize, QPoint
+from PySide6.QtCore import Qt, QDate, QTimer, QDateTime, QSize, QPoint, QTime
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QCheckBox, QComboBox, QFrame, QScrollArea,
+    QCheckBox, QComboBox, QSpinBox, QTimeEdit, QFrame, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QDateEdit, QTextEdit, QLineEdit, QTabWidget,
     QDialog, QDateTimeEdit, QDialogButtonBox, QRadioButton,
     QAbstractItemView, QApplication, QMessageBox,
 )
-from PySide6.QtGui import QIcon, QPixmap, QImage
+from PySide6.QtGui import QIcon, QPixmap, QImage, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
 
 class _FilterPopup(QDialog):
     def __init__(self, all_items: list[tuple[str, str]], selected: set[str] | None = None, parent=None):
         super().__init__(parent)
+        t = theme_manager.current()
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("""
-            _FilterPopup { background: #1e1e2e; border: 1px solid #3a3a4a; border-radius: 8px; }
+        self.setStyleSheet(f"""
+            _FilterPopup {{ background: #1e1e2e; border: 1px solid #3a3a4a; border-radius: {t.RADIUS_MD}px; }}
         """)
 
         layout = QVBoxLayout(self)
@@ -37,20 +39,20 @@ class _FilterPopup(QDialog):
                 continue
             cb = QCheckBox(text)
             cb.setChecked(data in (selected or set()))
-            cb.setStyleSheet("""
-                QCheckBox { color: #c0c0d0; font-size: 12px; padding: 4px 8px; }
-                QCheckBox:hover { background: rgba(79,172,254,0.15); border-radius: 4px; }
-                QCheckBox::indicator { width: 14px; height: 14px; }
+            cb.setStyleSheet(f"""
+                QCheckBox {{ color: #c0c0d0; font-size: {t.FONT_SM}px; padding: {t.SPACING_XS}px {t.SPACING_SM}px; }}
+                QCheckBox:hover {{ background: rgba(79,172,254,0.15); border-radius: 4px; }}
+                QCheckBox::indicator {{ width: 14px; height: 14px; }}
             """)
             self._checkboxes[data] = cb
             layout.addWidget(cb)
 
         btn_limpar = QPushButton("Limpar filtro")
-        btn_limpar.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px solid #3a3a4a;
-                border-radius: 4px; padding: 4px 12px; color: #e06c75;
-                font-size: 11px; margin-top: 6px; }
-            QPushButton:hover { background: rgba(224,108,117,0.15); }
+        btn_limpar.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid #3a3a4a;
+                border-radius: 4px; padding: {t.SPACING_XS}px 12px; color: #e06c75;
+                font-size: {t.FONT_XS}px; margin-top: 6px; }}
+            QPushButton:hover {{ background: rgba(224,108,117,0.15); }}
         """)
         btn_limpar.clicked.connect(self._limpar)
         layout.addWidget(btn_limpar)
@@ -67,6 +69,7 @@ class _FilterPopup(QDialog):
 class _MissedJobsDialog(QDialog):
     def __init__(self, jobs, parent=None):
         super().__init__(parent)
+        t = theme_manager.current()
         self.setWindowTitle("Encontrados na Fila")
         self.setMinimumSize(500, 350)
         self.setStyleSheet("""
@@ -80,7 +83,7 @@ class _MissedJobsDialog(QDialog):
         layout.setSpacing(12)
 
         title = QLabel("Envios Pendentes do Periodo")
-        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #e0e0f0;")
+        title.setStyleSheet(f"font-size: {t.FONT_LG}px; font-weight: 600; color: #e0e0f0;")
         layout.addWidget(title)
 
         total_clients = sum(len(j.get("clients", [])) for j in jobs)
@@ -89,7 +92,7 @@ class _MissedJobsDialog(QDialog):
             f"(<b>{total_clients}</b> cliente(s)) nao foram executados."
         )
         msg.setWordWrap(True)
-        msg.setStyleSheet("font-size: 12px; color: #a0a0b0;")
+        msg.setStyleSheet(f"font-size: {t.FONT_SM}px; color: #a0a0b0;")
         layout.addWidget(msg)
 
         # Job list
@@ -98,26 +101,26 @@ class _MissedJobsDialog(QDialog):
             tpl = job.get("template_name", "sem template")
             sched = job.get("scheduled_for", "?")[:16]
             job_lbl = QLabel(f"  #{i+1} — {n_clients} cliente(s) — {tpl} — agendado: {sched}")
-            job_lbl.setStyleSheet("font-size: 11px; color: #c0c0d0; padding: 4px 8px; border: 1px solid #3a3a4a; border-radius: 4px;")
+            job_lbl.setStyleSheet(f"font-size: {t.FONT_XS}px; color: #c0c0d0; padding: {t.SPACING_XS}px {t.SPACING_SM}px; border: 1px solid #3a3a4a; border-radius: 4px;")
             layout.addWidget(job_lbl)
 
         layout.addStretch()
 
         btn_layout = QHBoxLayout()
         btn_cancel = QPushButton("Cancelar Tudo")
-        btn_cancel.setStyleSheet("""
-            QPushButton { background: transparent; border: 1px solid #e06c75; border-radius: 6px;
-                padding: 8px 20px; color: #e06c75; font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: rgba(224,108,117,0.15); }
+        btn_cancel.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid #e06c75; border-radius: {t.RADIUS_SM}px;
+                padding: {t.SPACING_SM}px 20px; color: #e06c75; font-size: {t.FONT_SM}px; font-weight: 600; }}
+            QPushButton:hover {{ background: rgba(224,108,117,0.15); }}
         """)
         btn_cancel.clicked.connect(lambda: self._done("cancel"))
         btn_layout.addWidget(btn_cancel)
 
         btn_send = QPushButton("Enviar Agora")
-        btn_send.setStyleSheet("""
-            QPushButton { background: #4facfe; border: none; border-radius: 6px;
-                padding: 8px 20px; color: #fff; font-size: 12px; font-weight: 600; }
-            QPushButton:hover { background: #3d8bda; }
+        btn_send.setStyleSheet(f"""
+            QPushButton {{ background: #4facfe; border: none; border-radius: {t.RADIUS_SM}px;
+                padding: {t.SPACING_SM}px 20px; color: #fff; font-size: {t.FONT_SM}px; font-weight: 600; }}
+            QPushButton:hover {{ background: #3d8bda; }}
         """)
         btn_send.clicked.connect(lambda: self._done("send"))
         btn_layout.addWidget(btn_send)
@@ -201,39 +204,39 @@ SELECT {paginacao}
 """
 
 VARS_INFO = [
-    ("phone / celular",     "{phone}",      5,  "Fone (COALESCE)",   "Telefone do cliente (Fone ou Celular)"),
-    ("nome / nome_cliente", "{nome}",        3,  "Nome",              "Nome do cliente"),
-    ("cliente / codigo",    "{cliente}",     2,  "Cliente (Codigo)",  "Código do cliente"),
-    ("cpf_cnpj",            "{cpf_cnpj}",    4,  "CpfCnpj",           "CPF/CNPJ do cliente"),
-    ("empresa",             "{empresa}",     0,  "Empresa",           "Código da empresa"),
-    ("nome_fantasia",       "{nome_fantasia}", 1, "NomeFantasia",     "Nome fantasia da empresa"),
-    ("valor_cobranca",      "{valor_cobranca}", 20, "ValorPendente",  "Valor pendente (R$)"),
-    ("valor_total",         "{valor_total}", 18, "Valor",             "Valor original do documento (R$)"),
-    ("capital_recebido",    "{capital_recebido}", 19, "CapitalRecebido","Capital já recebido (R$)"),
-    ("status_cobranca",     "{status_cobranca}", 30, "Situacao",       "Situacao da parcela (P=Paga, etc)"),
-    ("valor_juros",         "{valor_juros}", 31, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
-    ("valor_multa",         "{valor_multa}", 32, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
-    ("codigo_barras",       "{codigo_barras}", 999, "Calculado", "Código de barras de 44 dígitos (calculado automaticamente)"),
-    ("linha_digitavel",     "{linha_digitavel}", 999, "Calculado", "Linha digitável de 47 dígitos (calculada a partir do código de barras)"),
-    ("numero_boleto / num_boleto", "{numero_boleto}", 28, "NumeroBoleto", "Número do boleto"),
-    ("nosso_numero",        "{nosso_numero}", 27, "NossoNumero", "Nosso número (registro no banco)"),
-    ("portador",            "{portador}",   25, "Portador",        "Código do portador/carteira"),
-    ("parcela",             "{parcela}",    26, "Parcela",         "Número da parcela"),
-    ("juros_taxa",          "{juros_taxa}",  22, "Juros (taxa %)",   "Taxa de juros (%)"),
-    ("vencimento",          "{vencimento}",  17, "Vencimento",        "Data de vencimento"),
-    ("emissao",             "{emissao}",     16, "Emissao",           "Data de emissão do documento"),
-    ("atraso",              "{atraso}",      15, "Atrazo (calc)",     "Dias em atraso"),
-    ("dias_carencia",       "{dias_carencia}", 11, "DiasCarenciaJuros","Dias de carência para juros"),
-    ("documento",           "{documento}",   13, "Documento",         "Nº doc / parcela (ex: 123/01)"),
-    ("id_documento",        "{id_documento}", 12, "IdDocumento",      "ID interno do documento"),
-    ("abreviatura",         "{abreviatura}", 14, "Abreviatura",       "Tipo do documento (DUP/CHQ/etc)"),
-    ("tipo_juro",           "{tipo_juro}",   23, "TipoJuro",          "Tipo de juros (S=simples, C=composto)"),
-    ("multa_taxa",          "{multa_taxa}",  21, "Multa (%)",         "Taxa de multa (%)"),
-    ("endereco",            "{endereco}",     6,  "Endereco",          "Endereço do cliente"),
-    ("numero",              "{numero}",       7,  "NumeroEndereco",    "Número do endereço"),
-    ("bairro",              "{bairro}",       8,  "Bairro",            "Bairro do cliente"),
-    ("cidade",              "{cidade}",      10,  "Cidade",            "Cidade do cliente"),
-    ("regiao",              "{regiao}",       9,  "Regiao",            "Região do cliente"),
+    ("phone / celular",     "{{phone}}",      5,  "Fone (COALESCE)",   "Telefone do cliente (Fone ou Celular)"),
+    ("nome / nome_cliente", "{{nome}}",        3,  "Nome",              "Nome do cliente"),
+    ("cliente / codigo",    "{{cliente}}",     2,  "Cliente (Codigo)",  "Código do cliente"),
+    ("cpf_cnpj",            "{{cpf_cnpj}}",    4,  "CpfCnpj",           "CPF/CNPJ do cliente"),
+    ("empresa",             "{{empresa}}",     0,  "Empresa",           "Código da empresa"),
+    ("nome_fantasia",       "{{nome_fantasia}}", 1, "NomeFantasia",     "Nome fantasia da empresa"),
+    ("valor_cobranca",      "{{valor_cobranca}}", 20, "ValorPendente",  "Valor pendente (R$)"),
+    ("valor_total",         "{{valor_total}}", 18, "Valor",             "Valor original do documento (R$)"),
+    ("capital_recebido",    "{{capital_recebido}}", 19, "CapitalRecebido","Capital já recebido (R$)"),
+    ("status_cobranca",     "{{status_cobranca}}", 30, "Situacao",       "Situacao da parcela (P=Paga, etc)"),
+    ("valor_juros",         "{{valor_juros}}", 31, "ValorJuros (calc)","Juros calculado sobre atraso (R$)"),
+    ("valor_multa",         "{{valor_multa}}", 32, "ValorMulta (calc)","Multa calculada sobre pendente (R$)"),
+    ("codigo_barras",       "{{codigo_barras}}", 999, "Calculado", "Código de barras de 44 dígitos (calculado automaticamente)"),
+    ("linha_digitavel",     "{{linha_digitavel}}", 999, "Calculado", "Linha digitável de 47 dígitos (calculada a partir do código de barras)"),
+    ("numero_boleto / num_boleto", "{{numero_boleto}}", 28, "NumeroBoleto", "Número do boleto"),
+    ("nosso_numero",        "{{nosso_numero}}", 27, "NossoNumero", "Nosso número (registro no banco)"),
+    ("portador",            "{{portador}}",   25, "Portador",        "Código do portador/carteira"),
+    ("parcela",             "{{parcela}}",    26, "Parcela",         "Número da parcela"),
+    ("juros_taxa",          "{{juros_taxa}}",  22, "Juros (taxa %)",   "Taxa de juros (%)"),
+    ("vencimento",          "{{vencimento}}",  17, "Vencimento",        "Data de vencimento"),
+    ("emissao",             "{{emissao}}",     16, "Emissao",           "Data de emissão do documento"),
+    ("atraso",              "{{atraso}}",      15, "Atrazo (calc)",     "Dias em atraso"),
+    ("dias_carencia",       "{{dias_carencia}}", 11, "DiasCarenciaJuros","Dias de carência para juros"),
+    ("documento",           "{{documento}}",   13, "Documento",         "Nº doc / parcela (ex: 123/01)"),
+    ("id_documento",        "{{id_documento}}", 12, "IdDocumento",      "ID interno do documento"),
+    ("abreviatura",         "{{abreviatura}}", 14, "Abreviatura",       "Tipo do documento (DUP/CHQ/etc)"),
+    ("tipo_juro",           "{{tipo_juro}}",   23, "TipoJuro",          "Tipo de juros (S=simples, C=composto)"),
+    ("multa_taxa",          "{{multa_taxa}}",  21, "Multa (%)",         "Taxa de multa (%)"),
+    ("endereco",            "{{endereco}}",     6,  "Endereco",          "Endereço do cliente"),
+    ("numero",              "{{numero}}",       7,  "NumeroEndereco",    "Número do endereço"),
+    ("bairro",              "{{bairro}}",       8,  "Bairro",            "Bairro do cliente"),
+    ("cidade",              "{{cidade}}",      10,  "Cidade",            "Cidade do cliente"),
+    ("regiao",              "{{regiao}}",       9,  "Regiao",            "Região do cliente"),
 ]
 
 PLACEHOLDER_MAP = {}
@@ -250,33 +253,33 @@ PLACEHOLDER_MAP["num_boleto"] = 28
 PLACEHOLDER_MAP["status_cobranca"] = 30
 
 DEFAULT_BODY_TEMPLATE = """{
-  "phone": "{phone}",
-  "first_name": "{nome_cliente}",
+  "phone": "{{phone}}",
+  "first_name": "{{nome_cliente}}",
   "actions": [
     {
       "action": "set_field_value",
       "field_name": "nome_cliente",
-      "value": "{nome_cliente}"
+      "value": "{{nome_cliente}}"
     },
     {
       "action": "set_field_value",
       "field_name": "valor_cobranca",
-      "value": "{valor_cobranca}"
+      "value": "{{valor_cobranca}}"
     },
     {
       "action": "set_field_value",
       "field_name": "data_vencimento",
-      "value": "{data_vencimento}"
+      "value": "{{data_vencimento}}"
     },
     {
       "action": "set_field_value",
       "field_name": "numero_boleto",
-      "value": "{numero_boleto}"
+      "value": "{{numero_boleto}}"
     },
     {
       "action": "set_field_value",
       "field_name": "status_cobranca",
-      "value": "{status_cobranca}"
+      "value": "{{status_cobranca}}"
     },
     {
       "action": "send_flow",
@@ -290,6 +293,18 @@ DEFAULT_HEADERS = [
     ("X-ACCESS-TOKEN", ""),
     ("Content-Type", "application/json"),
 ]
+
+# Feather Icons (MIT License) - https://feathericons.com
+SVG_CHECK_CIRCLE = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>"""
+SVG_CLOCK = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>"""
+SVG_ALERT = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>"""
+SVG_SAVE = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>"""
+SVG_TRASH = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>"""
+SVG_EDIT = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>"""
+SVG_REFRESH = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>"""
+SVG_PLUS = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>"""
+SVG_X = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>"""
+SVG_CHECK = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>"""
 
 DATA_DIR = os.path.join(os.path.expanduser("~"), ".econnect")
 TEMPLATES_FILE = os.path.join(DATA_DIR, "mundo_bots_templates.json")
@@ -339,7 +354,7 @@ QTabWidget::pane {{
 }}
 QTabBar::tab {{
     background: transparent; color: {t.text_secondary};
-    padding: 8px 20px; font-size: 13px; font-weight: 600;
+    padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600;
     border: none; border-bottom: 2px solid transparent;
     margin: 0 2px;
 }}
@@ -364,6 +379,7 @@ QTabBar::tab:hover {{
         self.tabs.addTab(self._build_clientes_tab(), "Clientes Agendados")
         self.tabs.addTab(self._build_history_tab(), "Histórico de Envios")
         self.tabs.addTab(self._build_template_tab(), "Criar Template")
+        self.tabs.addTab(self._build_auto_billing_tab(), "Cobrança Automática por Cliente")
 
     # ================== COBRANCA TAB ==================
 
@@ -377,20 +393,20 @@ QTabBar::tab:hover {{
         container = QWidget()
         container.setStyleSheet(f"background: {t.bg};")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD)
+        layout.setSpacing(t.SPACING_MD)
 
         # ── Filters ──
         filter_card = QFrame()
         filter_card.setStyleSheet(f"""
-            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}
+            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_MD}px; }}
         """)
         filter_layout = QVBoxLayout(filter_card)
-        filter_layout.setContentsMargins(20, 16, 20, 16)
+        filter_layout.setContentsMargins(20, t.CARD_PAD, 20, t.CARD_PAD)
         filter_layout.setSpacing(12)
 
         filter_title = QLabel("FILTROS")
-        filter_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
+        filter_title.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         filter_layout.addWidget(filter_title)
 
         date_row = QHBoxLayout()
@@ -412,7 +428,7 @@ QTabBar::tab:hover {{
         self.btn_12m.setStyleSheet(f"""
             QPushButton {{ background: {t.surface}; border: 1px solid {t.border};
                 border-radius: 4px; padding: 6px 12px; color: {t.primary};
-                font-size: 11px; font-weight: 600; }}
+                font-size: {t.FONT_XS}px; font-weight: 600; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.15); }}
         """)
         self.btn_12m.clicked.connect(lambda: (
@@ -431,7 +447,7 @@ QTabBar::tab:hover {{
         self.txt_nome_cliente.setStyleSheet(f"""
             QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
                 border-radius: 4px; padding: 6px; color: {t.text};
-                font-size: 12px; }}
+                font-size: {t.FONT_SM}px; }}
             QLineEdit:focus {{ border-color: {t.primary}; }}
         """)
         self.txt_nome_cliente.returnPressed.connect(self._filtrar)
@@ -444,7 +460,7 @@ QTabBar::tab:hover {{
         btn_style = f"""
             QPushButton {{ background: {t.bg}; border: 1px solid {t.border};
                 border-radius: 4px; padding: 6px; color: {t.text};
-                font-size: 12px; text-align: left; }}
+                font-size: {t.FONT_SM}px; text-align: left; }}
             QPushButton:hover {{ border-color: {t.primary}; }}
         """
 
@@ -517,7 +533,7 @@ QTabBar::tab:hover {{
         self.btn_filtrar.setCursor(Qt.PointingHandCursor)
         self.btn_filtrar.setStyleSheet(f"""
             QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
-                border-radius: 6px; padding: 8px 24px; font-size: 13px; font-weight: 700; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px {t.SPACING_LG}px; font-size: {t.FONT_MD}px; font-weight: 700; }}
             QPushButton:hover {{ background: {t.primary_hover}; }}
         """)
         self.btn_filtrar.clicked.connect(self._filtrar)
@@ -529,11 +545,11 @@ QTabBar::tab:hover {{
         # Pagination row
         page_row = QHBoxLayout()
         self.lbl_loading = QLabel("Nenhum")
-        self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.text_secondary}; font-weight: 600;")
+        self.lbl_loading.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary}; font-weight: 600;")
         page_row.addWidget(self.lbl_loading)
 
         self.lbl_configured_hidden = QLabel("0 clientes agendados")
-        self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
+        self.lbl_configured_hidden.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
         self.lbl_configured_hidden.setCursor(Qt.PointingHandCursor)
         self.lbl_configured_hidden.mousePressEvent = lambda e: self._show_hidden_clients_dialog()
         page_row.addWidget(self.lbl_configured_hidden)
@@ -544,8 +560,8 @@ QTabBar::tab:hover {{
         self.btn_prev.setEnabled(False)
         self.btn_prev.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 4px; color: {t.text}; padding: 6px 16px;
-                font-size: 12px; font-weight: 600; }}
+                border-radius: 4px; color: {t.text}; padding: 6px {t.SPACING_MD}px;
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
             QPushButton:disabled {{ color: {t.text_muted}; }}
         """)
@@ -563,7 +579,7 @@ QTabBar::tab:hover {{
 
         # ── Results Table ──
         results_label = QLabel("RESULTADOS")
-        results_label.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
+        results_label.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         layout.addWidget(results_label)
 
         self.table = QTableWidget()
@@ -587,11 +603,11 @@ QTabBar::tab:hover {{
         self.table.setMinimumHeight(200)
         self.table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
             QTableWidget::item {{ padding: 6px; }}
             QTableWidget::item:selected {{ background-color: rgba({_hex_to_rgb(t.primary)},0.3); }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
+                border: 1px solid {t.border}; padding: {t.SPACING_SM}px; font-weight: 600; font-size: {t.FONT_XS}px; }}
         """)
         self.table.setSortingEnabled(True)
         layout.addWidget(self.table, 1)
@@ -599,30 +615,30 @@ QTabBar::tab:hover {{
 
         # ── Selected + Actions ──
         actions_card = QFrame()
-        actions_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}")
+        actions_card.setStyleSheet(f"QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_MD}px; }}")
         actions_layout = QVBoxLayout(actions_card)
-        actions_layout.setContentsMargins(20, 16, 20, 16)
+        actions_layout.setContentsMargins(20, t.CARD_PAD, 20, t.CARD_PAD)
         actions_layout.setSpacing(10)
 
         sel_header = QHBoxLayout()
         sel_title = QLabel("SELECIONADOS PARA ENVIO")
-        sel_title.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
+        sel_title.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 0.5px;")
         sel_header.addWidget(sel_title)
         self.lbl_selected_count = QLabel("0 clientes")
-        self.lbl_selected_count.setStyleSheet(f"font-size: 12px; color: {t.accent_blue}; font-weight: 600;")
+        self.lbl_selected_count.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.accent_blue}; font-weight: 600;")
         sel_header.addWidget(self.lbl_selected_count)
         sel_header.addStretch()
         actions_layout.addLayout(sel_header)
 
         # ── Ver Pendencias ──
         boletos_row = QHBoxLayout()
-        boletos_row.setSpacing(8)
+        boletos_row.setSpacing(t.SPACING_SM)
         self.btn_ver_boletos = QPushButton("Ver Pendências")
         self.btn_ver_boletos.setCursor(Qt.PointingHandCursor)
         self.btn_ver_boletos.setStyleSheet(f"""
             QPushButton {{ background: {t.accent_blue}; color: {t.selection_text}; border: none;
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 12px; font-weight: 700; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_SM}px; font-weight: 700; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.accent_blue)},0.8); }}
             QPushButton:disabled {{ background: {t.surface_elevated}; color: {t.text_muted}; }}
         """)
@@ -632,13 +648,13 @@ QTabBar::tab:hover {{
         actions_layout.addLayout(boletos_row)
 
         template_row = QHBoxLayout()
-        template_row.setSpacing(8)
+        template_row.setSpacing(t.SPACING_SM)
         template_row.addWidget(QLabel("Template:"))
         self.cmb_template = QComboBox()
         self.cmb_template.setMinimumWidth(250)
         self.cmb_template.setStyleSheet(f"""
             QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         template_row.addWidget(self.cmb_template)
         template_row.addStretch()
@@ -647,8 +663,8 @@ QTabBar::tab:hover {{
         btn_visualizar.setCursor(Qt.PointingHandCursor)
         btn_visualizar.setStyleSheet(f"""
             QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 700; }}
             QPushButton:hover {{ background: {t.primary_hover}; }}
         """)
         btn_visualizar.clicked.connect(self._open_preview_dialog)
@@ -663,7 +679,7 @@ QTabBar::tab:hover {{
         self.btn_calculadora.setIconSize(QSize(20, 20))
         self.btn_calculadora.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.border};
-                border-radius: 6px; padding: 8px 10px; min-width: 40px; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 10px; min-width: 40px; }}
             QPushButton:hover {{ background: {t.surface_elevated}; }}
         """)
         self.btn_calculadora.clicked.connect(self._open_calculadora)
@@ -673,8 +689,8 @@ QTabBar::tab:hover {{
         self.btn_editar.setCursor(Qt.PointingHandCursor)
         self.btn_editar.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.primary};
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; color: {t.primary}; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 600; color: {t.primary}; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.15); }}
         """)
         self.btn_editar.clicked.connect(self._editar_campos_selecionados)
@@ -685,8 +701,8 @@ QTabBar::tab:hover {{
         self.btn_cancelar.setCursor(Qt.PointingHandCursor)
         self.btn_cancelar.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.danger};
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; color: {t.danger}; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 700; color: {t.danger}; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
         """)
         self.btn_cancelar.setEnabled(False)
@@ -697,8 +713,8 @@ QTabBar::tab:hover {{
         self.btn_agendar.setCursor(Qt.PointingHandCursor)
         self.btn_agendar.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.warning};
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; color: {t.warning}; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 700; color: {t.warning}; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.warning)},0.1); }}
             QPushButton:disabled {{ border-color: {t.border}; color: {t.text_muted}; }}
         """)
@@ -710,8 +726,8 @@ QTabBar::tab:hover {{
         self.btn_enviar.setCursor(Qt.PointingHandCursor)
         self.btn_enviar.setStyleSheet(f"""
             QPushButton {{ background: {t.success}; color: {t.selection_text}; border: none;
-                border-radius: 6px; padding: 8px 20px;
-                font-size: 13px; font-weight: 700; }}
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 700; }}
             QPushButton:hover {{ background: {t.success_hover}; }}
             QPushButton:disabled {{ background: {t.surface_elevated}; color: {t.text_muted}; }}
         """)
@@ -735,8 +751,8 @@ QTabBar::tab:hover {{
         t = theme_manager.current()
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD)
+        layout.setSpacing(t.SPACING_MD)
 
         header = QHBoxLayout()
         title = QLabel("Clientes Agendados")
@@ -748,8 +764,8 @@ QTabBar::tab:hover {{
         btn_refresh_jobs.setCursor(Qt.PointingHandCursor)
         btn_refresh_jobs.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 16px;
-                font-size: 12px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px {t.SPACING_MD}px;
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_refresh_jobs.clicked.connect(self._refresh_clientes_tab)
@@ -758,19 +774,19 @@ QTabBar::tab:hover {{
 
         filter_card = QFrame()
         filter_card.setStyleSheet(f"""
-            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}
+            QFrame {{ background-color: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_MD}px; }}
         """)
         filter_layout = QVBoxLayout(filter_card)
-        filter_layout.setContentsMargins(16, 12, 16, 12)
-        filter_layout.setSpacing(8)
+        filter_layout.setContentsMargins(t.CARD_PAD, 12, t.CARD_PAD, 12)
+        filter_layout.setSpacing(t.SPACING_SM)
 
         search_row = QHBoxLayout()
-        search_row.setSpacing(8)
+        search_row.setSpacing(t.SPACING_SM)
         self.job_search_input = QLineEdit()
         self.job_search_input.setPlaceholderText("Buscar por nome, template ou tag...")
         self.job_search_input.setStyleSheet(f"""
             QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         search_row.addWidget(self.job_search_input, 1)
 
@@ -781,7 +797,7 @@ QTabBar::tab:hover {{
         self.job_filter_dt_ini.setSpecialValueText(" ")
         self.job_filter_dt_ini.setStyleSheet(f"""
             QDateEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 4px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: {t.SPACING_XS}px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         search_row.addWidget(self.job_filter_dt_ini)
 
@@ -797,7 +813,7 @@ QTabBar::tab:hover {{
         btn_filter_jobs.setCursor(Qt.PointingHandCursor)
         btn_filter_jobs.setStyleSheet(f"""
             QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
-                border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 700; }}
+                border-radius: 4px; padding: 6px {t.SPACING_MD}px; font-size: {t.FONT_SM}px; font-weight: 700; }}
             QPushButton:hover {{ background: {t.primary_hover}; }}
         """)
         btn_filter_jobs.clicked.connect(self._refresh_clientes_tab)
@@ -808,7 +824,7 @@ QTabBar::tab:hover {{
         btn_clear_filters.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.border};
                 border-radius: 4px; color: {t.text}; padding: 6px 12px;
-                font-size: 12px; font-weight: 600; }}
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_clear_filters.clicked.connect(self._clear_job_filters)
@@ -836,10 +852,10 @@ QTabBar::tab:hover {{
         self.jobs_table.verticalHeader().setDefaultSectionSize(40)
         self.jobs_table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
             QTableWidget::item {{ padding: 6px; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
+                border: 1px solid {t.border}; padding: {t.SPACING_SM}px; font-weight: 600; font-size: {t.FONT_XS}px; }}
         """)
         self.jobs_table.setSortingEnabled(True)
         layout.addWidget(self.jobs_table, 1)
@@ -929,7 +945,7 @@ QTabBar::tab:hover {{
             btn_ver = QPushButton("Ver")
             btn_ver.setStyleSheet(f"""
                 QPushButton {{ background: transparent; border: 1px solid {t.accent_blue};
-                    border-radius: 3px; color: {t.accent_blue}; padding: 2px 8px;
+                    border-radius: 3px; color: {t.accent_blue}; padding: 2px {t.SPACING_SM}px;
                     font-size: 10px; font-weight: 600; }}
                 QPushButton:hover {{ background: rgba({_hex_to_rgb(t.accent_blue)},0.1); }}
             """)
@@ -938,14 +954,14 @@ QTabBar::tab:hover {{
             if status == "pending":
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
-                actions_layout.setContentsMargins(4, 2, 4, 2)
-                actions_layout.setSpacing(4)
+                actions_layout.setContentsMargins(t.SPACING_XS, 2, t.SPACING_XS, 2)
+                actions_layout.setSpacing(t.SPACING_XS)
                 actions_layout.addWidget(btn_ver)
 
                 btn_cancel = QPushButton("Cancelar")
                 btn_cancel.setStyleSheet(f"""
                     QPushButton {{ background: transparent; border: 1px solid {t.danger};
-                        border-radius: 3px; color: {t.danger}; padding: 2px 8px;
+                        border-radius: 3px; color: {t.danger}; padding: 2px {t.SPACING_SM}px;
                         font-size: 10px; font-weight: 600; }}
                     QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
                 """)
@@ -960,8 +976,8 @@ QTabBar::tab:hover {{
 
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
-                actions_layout.setContentsMargins(4, 2, 4, 2)
-                actions_layout.setSpacing(4)
+                actions_layout.setContentsMargins(t.SPACING_XS, 2, t.SPACING_XS, 2)
+                actions_layout.setSpacing(t.SPACING_XS)
                 actions_layout.addWidget(btn_ver)
 
                 lbl_result = QLabel(result_text)
@@ -989,7 +1005,7 @@ QTabBar::tab:hover {{
         dlg.resize(600, 400)
         dlg.setStyleSheet(f"""
             QDialog {{ background-color: {t.bg}; color: {t.text}; }}
-            QLabel {{ color: {t.text}; font-size: 13px; }}
+            QLabel {{ color: {t.text}; font-size: {t.FONT_MD}px; }}
         """)
 
         layout = QVBoxLayout(dlg)
@@ -1001,7 +1017,7 @@ QTabBar::tab:hover {{
         layout.addWidget(title)
 
         info = QLabel(f"Template: {job.get('template_name', '')} · Tag: {job.get('tag', '-')} · Status: {job.get('status', 'pending').upper()}")
-        info.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
+        info.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
         layout.addWidget(info)
 
         table = QTableWidget()
@@ -1016,9 +1032,9 @@ QTabBar::tab:hover {{
         table.setSelectionMode(QTableWidget.NoSelection)
         table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
+                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: {t.FONT_XS}px; }}
         """)
         table.setSortingEnabled(True)
 
@@ -1038,8 +1054,8 @@ QTabBar::tab:hover {{
         btn_fechar = QPushButton("Fechar")
         btn_fechar.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
@@ -1057,8 +1073,8 @@ QTabBar::tab:hover {{
         t = theme_manager.current()
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD)
+        layout.setSpacing(t.SPACING_MD)
 
         header = QHBoxLayout()
         title = QLabel("Histórico de Envios")
@@ -1070,8 +1086,8 @@ QTabBar::tab:hover {{
         btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 16px;
-                font-size: 12px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px {t.SPACING_MD}px;
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_refresh.clicked.connect(self._refresh_history_tab)
@@ -1101,10 +1117,10 @@ QTabBar::tab:hover {{
         self.history_table.verticalHeader().setDefaultSectionSize(36)
         self.history_table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
             QTableWidget::item {{ padding: 6px; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
+                border: 1px solid {t.border}; padding: {t.SPACING_SM}px; font-weight: 600; font-size: {t.FONT_XS}px; }}
         """)
         layout.addWidget(self.history_table, 1)
 
@@ -1142,7 +1158,7 @@ QTabBar::tab:hover {{
             btn_ver = QPushButton("Visualizar")
             btn_ver.setStyleSheet(f"""
                 QPushButton {{ background: transparent; border: 1px solid {t.accent_blue};
-                    border-radius: 3px; color: {t.accent_blue}; padding: 2px 8px;
+                    border-radius: 3px; color: {t.accent_blue}; padding: 2px {t.SPACING_SM}px;
                     font-size: 10px; font-weight: 600; }}
                 QPushButton:hover {{ background: rgba({_hex_to_rgb(t.accent_blue)},0.1); }}
             """)
@@ -1167,15 +1183,15 @@ QTabBar::tab:hover {{
         layout.setSpacing(12)
 
         title = QLabel("Detalhes do Envio")
-        title.setStyleSheet(f"font-size: 20px; font-weight: 800; color: {t.text};")
+        title.setStyleSheet(f"font-size: {t.FONT_XL}px; font-weight: 800; color: {t.text};")
         layout.addWidget(title)
 
         info_card = QFrame()
         info_card.setStyleSheet(f"""
-            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; }}
+            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; }}
         """)
         info_layout = QVBoxLayout(info_card)
-        info_layout.setContentsMargins(16, 14, 16, 14)
+        info_layout.setContentsMargins(t.CARD_PAD, 14, t.CARD_PAD, 14)
         info_layout.setSpacing(6)
 
         sent_at = entry.get("sent_at", "")
@@ -1206,17 +1222,17 @@ QTabBar::tab:hover {{
             row_w.setStyleSheet("border: none; background: transparent;")
             row_layout = QHBoxLayout(row_w)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(8)
+            row_layout.setSpacing(t.SPACING_SM)
 
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
+            lbl.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
             row_layout.addWidget(lbl)
 
             val = QLabel(value)
             if label.startswith("📌"):
-                val.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {status_color}; border: none; background: transparent;")
+                val.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 700; color: {status_color}; border: none; background: transparent;")
             else:
-                val.setStyleSheet(f"font-size: 12px; color: {t.text}; border: none; background: transparent;")
+                val.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; border: none; background: transparent;")
             val.setWordWrap(True)
             row_layout.addWidget(val, 1)
             info_layout.addWidget(row_w)
@@ -1226,7 +1242,7 @@ QTabBar::tab:hover {{
         body = entry.get("body", "")
         if body:
             body_label = QLabel("Mensagem enviada:")
-            body_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary};")
+            body_label.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t.text_secondary};")
             layout.addWidget(body_label)
 
             body_edit = QTextEdit()
@@ -1236,16 +1252,16 @@ QTabBar::tab:hover {{
             body_edit.setMaximumHeight(200)
             body_edit.setStyleSheet(f"""
                 QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                    border-radius: 4px; padding: 8px; color: {t.text};
-                    font-size: 11px; font-family: Consolas, monospace; }}
+                    border-radius: 4px; padding: {t.SPACING_SM}px; color: {t.text};
+                    font-size: {t.FONT_XS}px; font-family: Consolas, monospace; }}
             """)
             layout.addWidget(body_edit)
 
         btn_fechar = QPushButton("Fechar")
         btn_fechar.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
@@ -1269,8 +1285,8 @@ QTabBar::tab:hover {{
         container = QWidget()
         container.setStyleSheet(f"background: {t.bg};")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD)
+        layout.setSpacing(t.SPACING_MD)
 
         header = QHBoxLayout()
         title = QLabel("Criar Template")
@@ -1281,13 +1297,13 @@ QTabBar::tab:hover {{
 
         # Template name + load/save/delete
         manage_row = QHBoxLayout()
-        manage_row.setSpacing(8)
+        manage_row.setSpacing(t.SPACING_SM)
         manage_row.addWidget(QLabel("Template:"))
         self.cmb_saved_templates = QComboBox()
         self.cmb_saved_templates.setMinimumWidth(250)
         self.cmb_saved_templates.setStyleSheet(f"""
             QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         self.cmb_saved_templates.currentIndexChanged.connect(self._load_selected_template)
         manage_row.addWidget(self.cmb_saved_templates)
@@ -1296,14 +1312,14 @@ QTabBar::tab:hover {{
         self.template_name_input.setPlaceholderText("Nome do template...")
         self.template_name_input.setStyleSheet(f"""
             QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         manage_row.addWidget(self.template_name_input, 1)
 
         btn_save_template = QPushButton("Salvar")
         btn_save_template.setStyleSheet(f"""
             QPushButton {{ background: {t.success}; color: {t.selection_text}; border: none;
-                border-radius: 4px; padding: 6px 16px; font-size: 12px; font-weight: 600; }}
+                border-radius: 4px; padding: 6px {t.SPACING_MD}px; font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.success_hover}; }}
         """)
         btn_save_template.clicked.connect(self._save_template)
@@ -1312,8 +1328,8 @@ QTabBar::tab:hover {{
         btn_delete_template = QPushButton("Excluir")
         btn_delete_template.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid {t.danger};
-                border-radius: 4px; color: {t.danger}; padding: 6px 16px;
-                font-size: 12px; font-weight: 600; }}
+                border-radius: 4px; color: {t.danger}; padding: 6px {t.SPACING_MD}px;
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
             QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
         """)
         btn_delete_template.clicked.connect(self._delete_template)
@@ -1323,34 +1339,34 @@ QTabBar::tab:hover {{
 
         # Tag
         tag_row = QHBoxLayout()
-        tag_row.setSpacing(8)
+        tag_row.setSpacing(t.SPACING_SM)
         tag_row.addWidget(QLabel("Tag:"))
         self.tmpl_tag = QLineEdit()
         self.tmpl_tag.setPlaceholderText("cobrança, promoção, aviso...")
         self.tmpl_tag.setStyleSheet(f"""
             QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         tag_row.addWidget(self.tmpl_tag, 1)
         layout.addLayout(tag_row)
 
         # Method + URL
         url_row = QHBoxLayout()
-        url_row.setSpacing(8)
+        url_row.setSpacing(t.SPACING_SM)
         self.tmpl_method = QComboBox()
         self.tmpl_method.addItems(["POST", "GET", "PUT", "PATCH", "DELETE"])
         self.tmpl_method.setCurrentText("POST")
         self.tmpl_method.setFixedWidth(90)
         self.tmpl_method.setStyleSheet(f"""
             QComboBox {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         url_row.addWidget(self.tmpl_method)
         self.tmpl_url = QLineEdit()
         self.tmpl_url.setPlaceholderText("https://app.mundodosbots.com.br/api/users")
         self.tmpl_url.setStyleSheet(f"""
             QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 6px; color: {t.text}; font-size: 12px; }}
+                border-radius: 4px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
         """)
         url_row.addWidget(self.tmpl_url, 1)
         btn_paste = QPushButton("Colar")
@@ -1358,7 +1374,7 @@ QTabBar::tab:hover {{
         btn_paste.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
                 border-radius: 4px; color: {t.text}; padding: 6px;
-                font-size: 11px; font-weight: 600; }}
+                font-size: {t.FONT_XS}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_paste.clicked.connect(self._import_curl_template)
@@ -1383,9 +1399,9 @@ QTabBar::tab:hover {{
         self.tmpl_headers.setMaximumHeight(140)
         self.tmpl_headers.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 11px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_XS}px; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 4px; font-weight: 600; font-size: 10px; }}
+                border: 1px solid {t.border}; padding: {t.SPACING_XS}px; font-weight: 600; font-size: 10px; }}
         """)
         for key, val in DEFAULT_HEADERS:
             self._add_tmpl_header_row(key, val)
@@ -1395,7 +1411,7 @@ QTabBar::tab:hover {{
         btn_add_hdr.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px dashed {t.border};
                 border-radius: 4px; color: {t.text_secondary}; padding: 6px;
-                font-size: 11px; font-weight: 600; }}
+                font-size: {t.FONT_XS}px; font-weight: 600; }}
             QPushButton:hover {{ border-color: {t.accent_blue}; color: {t.accent_blue}; }}
         """)
         btn_add_hdr.clicked.connect(lambda: self._add_tmpl_header_row())
@@ -1412,20 +1428,20 @@ QTabBar::tab:hover {{
         self.tmpl_body.setMaximumHeight(240)
         self.tmpl_body.setStyleSheet(f"""
             QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 8px; color: {t.text};
-                font-size: 11px; font-family: Consolas, monospace; }}
+                border-radius: 4px; padding: {t.SPACING_SM}px; color: {t.text};
+                font-size: {t.FONT_XS}px; font-family: Consolas, monospace; }}
         """)
         layout.addWidget(self.tmpl_body)
 
         # ── Variable Reference ──
         vars_label = QLabel("VARIÁVEIS DISPONÍVEIS")
-        vars_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 600; letter-spacing: 0.5px; margin-top: 8px;")
+        vars_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 600; letter-spacing: 0.5px; margin-top: {t.SPACING_SM}px;")
         layout.addWidget(vars_label)
 
         vars_container = QFrame()
         vars_container.setStyleSheet(f"""
             QFrame {{ background-color: {t.surface}; border: 1px solid {t.border};
-                     border-radius: 6px; }}
+                     border-radius: {t.RADIUS_SM}px; }}
         """)
         vars_inner = QVBoxLayout(vars_container)
         vars_inner.setContentsMargins(12, 10, 12, 10)
@@ -1433,7 +1449,7 @@ QTabBar::tab:hover {{
 
         var_desc = QLabel("Use <b>{{placeholder}}</b> no Body Template e Headers. Eles serão substituídos pelos dados de cada cliente.")
         var_desc.setWordWrap(True)
-        var_desc.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; border: none;")
+        var_desc.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; border: none;")
         vars_inner.addWidget(var_desc)
 
         var_table = QTableWidget()
@@ -1451,11 +1467,11 @@ QTabBar::tab:hover {{
         var_table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
                 border: 1px solid {t.surface_elevated}; gridline-color: {t.surface_elevated};
-                font-size: 11px; font-family: Consolas, monospace; }}
+                font-size: {t.FONT_XS}px; font-family: Consolas, monospace; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
                 border: none; border-bottom: 1px solid {t.border};
-                padding: 4px; font-weight: 600; font-size: 10px; }}
-            QTableWidget::item {{ padding: 2px 8px; }}
+                padding: {t.SPACING_XS}px; font-weight: 600; font-size: 10px; }}
+            QTableWidget::item {{ padding: 2px {t.SPACING_SM}px; }}
         """)
         for _, placeholder, col, sql_field, desc in VARS_INFO:
             r = var_table.rowCount()
@@ -1614,6 +1630,22 @@ QTabBar::tab:hover {{
                 self.cmb_saved_templates.setCurrentIndex(idx)
         self.cmb_saved_templates.blockSignals(False)
 
+        # Also refresh auto-billing template combo
+        if hasattr(self, 'ab_cmb_template'):
+            current_ab = self.ab_cmb_template.currentData()
+            self.ab_cmb_template.blockSignals(True)
+            self.ab_cmb_template.clear()
+            for t in templates:
+                tag = t.get("tag", "")
+                label = f"{t.get('name', 'Sem nome')}  [{tag}]" if tag else t.get("name", "Sem nome")
+                self.ab_cmb_template.addItem(label, t)
+            if current_ab:
+                for i in range(self.ab_cmb_template.count()):
+                    if self.ab_cmb_template.itemData(i).get("name") == current_ab.get("name"):
+                        self.ab_cmb_template.setCurrentIndex(i)
+                        break
+            self.ab_cmb_template.blockSignals(False)
+
     # ================== TEMPLATE CRUD ==================
 
     def _save_template(self):
@@ -1624,13 +1656,61 @@ QTabBar::tab:hover {{
         config = self._get_template_config_from_editor()
         templates = self._load_templates()
         found = False
+        existing_id = None
         for i, t in enumerate(templates):
             if t["name"] == name:
+                existing_id = t.get("id")
                 templates[i] = {"name": name, **config}
+                if existing_id:
+                    templates[i]["id"] = existing_id
                 found = True
                 break
         if not found:
             templates.append({"name": name, **config})
+
+        from frontend.app.api.client_billing_api import create_billing_template, update_billing_template
+        try:
+            hdrs = config.get("headers", [])
+            tpl_api_token = ""
+            tpl_flow_id = ""
+            body_text = config.get("body", "")
+            if body_text:
+                try:
+                    body_data = json.loads(body_text)
+                    for action in body_data.get("actions", []):
+                        if action.get("action") == "send_flow" and action.get("flow_id"):
+                            tpl_flow_id = str(action["flow_id"])
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass
+            for h in hdrs:
+                if isinstance(h, (list, tuple)) and len(h) >= 2:
+                    if h[0].lower() == "x-access-token":
+                        tpl_api_token = str(h[1])
+                    if not tpl_flow_id and h[0].lower() == "flow_id":
+                        tpl_flow_id = str(h[1])
+            payload = {
+                "name": name,
+                "method": config.get("method", "POST"),
+                "url": config.get("url", ""),
+                "headers": hdrs,
+                "body": body_text,
+                "tag": config.get("tag", ""),
+                "api_token": tpl_api_token,
+                "flow_id": tpl_flow_id,
+                "offset_days": 0,
+                "send_time": "09:00",
+            }
+            if existing_id:
+                result = update_billing_template(existing_id, payload)
+            else:
+                result = create_billing_template(payload)
+                for t in templates:
+                    if t["name"] == name:
+                        t["id"] = result["id"]
+                        break
+        except Exception as e:
+            print(f"[WARNING] Falha ao sincronizar template com backend: {e}")
+
         self._save_templates_to_disk(templates)
         show_success(self, "OK", f'Template "{name}" salvo!')
         self._refresh_template_combo()
@@ -1642,8 +1722,21 @@ QTabBar::tab:hover {{
         if not show_confirm(self, "Confirmar", f'Excluir template "{name}"?'):
             return
         templates = self._load_templates()
+        removed_id = None
+        for t in templates:
+            if t.get("name") == name:
+                removed_id = t.get("id")
+                break
         templates = [t for t in templates if t.get("name") != name]
         self._save_templates_to_disk(templates)
+
+        if removed_id:
+            from frontend.app.api.client_billing_api import delete_billing_template
+            try:
+                delete_billing_template(removed_id)
+            except Exception as e:
+                print(f"[WARNING] Falha ao excluir template no backend: {e}")
+
         show_success(self, "OK", "Template excluído.")
         self.template_name_input.clear()
         self._refresh_template_combo()
@@ -1686,7 +1779,7 @@ QTabBar::tab:hover {{
         btn_del = QPushButton("×")
         btn_del.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: none;
-                color: {t.danger}; font-size: 16px; font-weight: 700; }}
+                color: {t.danger}; font-size: {t.FONT_LG}px; font-weight: 700; }}
             QPushButton:hover {{ color: {t.danger_hover}; }}
         """)
         btn_del.clicked.connect(lambda: self.tmpl_headers.removeRow(row))
@@ -2044,7 +2137,7 @@ QTabBar::tab:hover {{
         if nome_cliente:
             safe = nome_cliente.replace(chr(39), chr(39)+chr(39))
             if len(nome_cliente) >= 3:
-                filtros.append(f"AND Clg.Nome STARTING WITH '{safe}'")
+                filtros.append(f"AND UPPER(Clg.Nome) STARTING WITH UPPER('{safe}')")
             else:
                 filtros.append(f"AND Clg.Nome CONTAINING '{safe}'")
         selected_pessoa = list(self._tipo_pessoa_selected)
@@ -2108,7 +2201,7 @@ QTabBar::tab:hover {{
                 self.btn_filtrar.setEnabled(True)
                 self.btn_filtrar.setText("Filtrar")
                 self.lbl_loading.setText("Carregado")
-                self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600;")
+                self.lbl_loading.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.success}; font-weight: 600;")
 
                 from datetime import date as _calc_date
                 today = _calc_date.today()
@@ -2193,14 +2286,14 @@ QTabBar::tab:hover {{
                 self.btn_filtrar.setEnabled(True)
                 self.btn_filtrar.setText("Filtrar")
                 self.lbl_loading.setText("Nenhum")
-                self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
+                self.lbl_loading.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.danger}; font-weight: 600;")
                 show_error(self, "Erro", f"Erro ao processar resultados:\n{e}")
 
         def _on_error(e):
             self.btn_filtrar.setEnabled(True)
             self.btn_filtrar.setText("Filtrar")
             self.lbl_loading.setText("Nenhum")
-            self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
+            self.lbl_loading.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.danger}; font-weight: 600;")
             show_error(self, "Erro", f"Falha ao executar consulta:\n{e}")
 
         run_in_thread(_do_query, _on_result, _on_error)
@@ -2218,9 +2311,9 @@ QTabBar::tab:hover {{
         t = theme_manager.current()
         self.lbl_configured_hidden.setText(f"{count} cliente(s) agendado(s)")
         if count > 0:
-            self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.accent_blue}; text-decoration: underline;")
+            self.lbl_configured_hidden.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.accent_blue}; text-decoration: underline;")
         else:
-            self.lbl_configured_hidden.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
+            self.lbl_configured_hidden.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
 
     def _update_page_info(self):
         self.btn_prev.setEnabled(self._page > 0)
@@ -2237,7 +2330,7 @@ QTabBar::tab:hover {{
         dlg.resize(600, 400)
         dlg.setStyleSheet(f"""
             QDialog {{ background-color: {t.bg}; color: {t.text}; }}
-            QLabel {{ color: {t.text}; font-size: 13px; }}
+            QLabel {{ color: {t.text}; font-size: {t.FONT_MD}px; }}
         """)
 
         layout = QVBoxLayout(dlg)
@@ -2263,9 +2356,9 @@ QTabBar::tab:hover {{
         table.setSelectionMode(QTableWidget.NoSelection)
         table.setStyleSheet(f"""
             QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
             QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: 11px; }}
+                border: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: {t.FONT_XS}px; }}
         """)
         table.setSortingEnabled(True)
 
@@ -2281,7 +2374,7 @@ QTabBar::tab:hover {{
             btn_remover.setFixedWidth(70)
             btn_remover.setStyleSheet(f"""
                 QPushButton {{ background: transparent; border: 1px solid {t.danger};
-                    border-radius: 3px; color: {t.danger}; padding: 1px 4px;
+                    border-radius: 3px; color: {t.danger}; padding: 1px {t.SPACING_XS}px;
                     font-size: 9px; font-weight: 600; }}
                 QPushButton:hover {{ background: rgba({_hex_to_rgb(t.danger)},0.1); }}
             """)
@@ -2293,8 +2386,8 @@ QTabBar::tab:hover {{
         btn_fechar = QPushButton("Fechar")
         btn_fechar.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
@@ -2465,7 +2558,7 @@ QTabBar::tab:hover {{
             self.btn_filtrar.setEnabled(True)
             self.btn_filtrar.setText("Filtrar")
             self.lbl_loading.setText("Nenhum")
-            self.lbl_loading.setStyleSheet(f"font-size: 12px; color: {t.danger}; font-weight: 600;")
+            self.lbl_loading.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.danger}; font-weight: 600;")
             show_error(self, "Erro", f"Erro ao popular tabela:\n{e}")
 
     def _on_check_changed(self, item):
@@ -2526,15 +2619,15 @@ QTabBar::tab:hover {{
             dlg.setMinimumWidth(420)
             dlg.setStyleSheet(f"""
                 QDialog {{ background-color: {t.bg}; color: {t.text}; }}
-                QLabel {{ color: {t.text}; font-size: 12px; }}
+                QLabel {{ color: {t.text}; font-size: {t.FONT_SM}px; }}
                 QLineEdit {{ background: {t.bg}; border: 1px solid {t.border};
                     border-radius: 4px; padding: 6px; color: {t.text};
-                    font-size: 12px; }}
+                    font-size: {t.FONT_SM}px; }}
                 QLineEdit:focus {{ border-color: {t.primary}; }}
             """)
             lo = QVBoxLayout(dlg)
             lo.setSpacing(10)
-            lo.setContentsMargins(16, 16, 16, 16)
+            lo.setContentsMargins(t.SPACING_MD, t.SPACING_MD, t.SPACING_MD, t.SPACING_MD)
 
             inputs = {}
             for name, col, label, _ in self._EDITABLE_FIELDS:
@@ -2551,16 +2644,16 @@ QTabBar::tab:hover {{
             btn_salvar = QPushButton("Salvar no Banco")
             btn_salvar.setStyleSheet(f"""
                 QPushButton {{ background: {t.primary}; color: {t.selection_text};
-                    border: none; border-radius: 6px; padding: 8px 20px;
-                    font-size: 13px; font-weight: 700; }}
+                    border: none; border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                    font-size: {t.FONT_MD}px; font-weight: 700; }}
                 QPushButton:hover {{ background: {t.primary_hover}; }}
             """)
             btn_salvar.clicked.connect(lambda checked, d=dlg: d.accept())
             btn_pular = QPushButton("Pular")
             btn_pular.setStyleSheet(f"""
                 QPushButton {{ background: transparent; border: 1px solid {t.border};
-                    border-radius: 6px; padding: 8px 20px;
-                    font-size: 12px; color: {t.text}; }}
+                    border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px;
+                    font-size: {t.FONT_SM}px; color: {t.text}; }}
             """)
             btn_pular.clicked.connect(dlg.reject)
 
@@ -2652,14 +2745,14 @@ QTabBar::tab:hover {{
             QDialog {{ background-color: {t.bg}; color: {t.text}; }}
             QTabWidget::pane {{ background: {t.bg}; border: none; }}
             QTabBar::tab {{ background: transparent; color: {t.text_secondary};
-                padding: 8px 20px; font-size: 13px; font-weight: 600;
+                padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600;
                 border: none; border-bottom: 2px solid transparent; }}
             QTabBar::tab:selected {{ color: {t.text}; border-bottom: 2px solid {t.primary}; }}
             QTabBar::tab:hover {{ color: {t.text}; }}
         """)
 
         layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(t.SPACING_MD, t.SPACING_MD, t.SPACING_MD, t.SPACING_MD)
         layout.setSpacing(12)
 
         tabs = QTabWidget()
@@ -2678,12 +2771,12 @@ QTabBar::tab:hover {{
 
         card = QFrame()
         card.setStyleSheet(f"""
-            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 6px; }}
+            QFrame {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; }}
             QFrame * {{ background: transparent; }}
         """)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 14, 16, 14)
-        card_layout.setSpacing(8)
+        card_layout.setContentsMargins(t.CARD_PAD, 14, t.CARD_PAD, 14)
+        card_layout.setSpacing(t.SPACING_SM)
 
         phone_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>"""
         _pi = QImage.fromData(phone_svg.replace("currentColor", t.text_secondary).encode(), "SVG")
@@ -2716,7 +2809,7 @@ QTabBar::tab:hover {{
         nome_icon.setStyleSheet("background: transparent; border: none;")
         nome_lo.addWidget(nome_icon)
         lbl_nome = QLabel(f"Cliente:  {nome}")
-        lbl_nome.setStyleSheet(f"font-size: 13px; color: {t.text}; border: none; background: transparent;")
+        lbl_nome.setStyleSheet(f"font-size: {t.FONT_MD}px; color: {t.text}; border: none; background: transparent;")
         nome_lo.addWidget(lbl_nome)
         nome_lo.addStretch()
         card_layout.addWidget(nome_row)
@@ -2730,7 +2823,7 @@ QTabBar::tab:hover {{
         grid_w.setStyleSheet("background: transparent; border: none;")
         grid = QHBoxLayout(grid_w)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(24)
+        grid.setSpacing(t.SPACING_LG)
 
         left_col = QVBoxLayout()
         left_col.setSpacing(6)
@@ -2763,7 +2856,7 @@ QTabBar::tab:hover {{
                 card_layout.addWidget(sep2)
 
                 lbl_f = QLabel("Campos que serão preenchidos:")
-                lbl_f.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
+                lbl_f.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
                 card_layout.addWidget(lbl_f)
 
                 field_labels = {
@@ -2784,11 +2877,11 @@ QTabBar::tab:hover {{
                         row_w.setStyleSheet(f"background: transparent; border: none;")
                         row_lo = QHBoxLayout(row_w)
                         row_lo.setContentsMargins(0, 2, 0, 2)
-                        row_lo.setSpacing(4)
+                        row_lo.setSpacing(t.SPACING_XS)
                         lbl_f = QLabel(f"• {label}:")
-                        lbl_f.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
+                        lbl_f.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t.text_secondary}; border: none; background: transparent;")
                         val_f = QLabel(fv)
-                        val_f.setStyleSheet(f"font-size: 11px; color: {t.text}; border: none; background: transparent; font-family: Consolas, monospace;")
+                        val_f.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text}; border: none; background: transparent; font-family: Consolas, monospace;")
                         val_f.setTextInteractionFlags(Qt.TextSelectableByMouse)
                         _cs = """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
                         _csi = QImage.fromData(_cs.replace("currentColor", t.text_secondary).encode(), "SVG")
@@ -2797,7 +2890,7 @@ QTabBar::tab:hover {{
                         btn_f = QPushButton(_clip_icon, "")
                         btn_f.setIconSize(QSize(14, 14))
                         btn_f.setToolTip(f"Copiar {label.lower()}")
-                        btn_f.setStyleSheet(f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.text}; padding: 2px 8px; font-size: 11px; }} QPushButton:hover {{ background: {t.primary}; color: #fff; }}")
+                        btn_f.setStyleSheet(f"QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border}; border-radius: 4px; color: {t.text}; padding: 2px {t.SPACING_SM}px; font-size: {t.FONT_XS}px; }} QPushButton:hover {{ background: {t.primary}; color: #fff; }}")
                         btn_f.clicked.connect(lambda _, v=fv: QApplication.clipboard().setText(v))
                         row_lo.addWidget(lbl_f, 0)
                         row_lo.addWidget(val_f, 1)
@@ -2826,7 +2919,7 @@ QTabBar::tab:hover {{
                 flow_icon.setStyleSheet("background: transparent; border: none;")
                 flow_lo.addWidget(flow_icon)
                 lbl_flow = QLabel(f"Fluxo: #{flow_id}")
-                lbl_flow.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {t.accent_blue}; border: none; background: transparent;")
+                lbl_flow.setStyleSheet(f"font-size: {t.FONT_MD}px; font-weight: 600; color: {t.accent_blue}; border: none; background: transparent;")
                 flow_lo.addWidget(lbl_flow)
                 flow_lo.addStretch()
                 card_layout.addWidget(flow_row)
@@ -2843,8 +2936,8 @@ QTabBar::tab:hover {{
         json_edit.setPlainText(substituted)
         json_edit.setStyleSheet(f"""
             QTextEdit {{ background: {t.bg}; border: 1px solid {t.border};
-                border-radius: 4px; padding: 8px; color: {t.text};
-                font-size: 11px; font-family: Consolas, monospace; }}
+                border-radius: 4px; padding: {t.SPACING_SM}px; color: {t.text};
+                font-size: {t.FONT_XS}px; font-family: Consolas, monospace; }}
         """)
         tabs.addTab(json_edit, "JSON")
 
@@ -2883,17 +2976,17 @@ QTabBar::tab:hover {{
 
             def _make_copy_row(label: str, valor: str, t_obj) -> QWidget:
                 w = QWidget()
-                w.setStyleSheet(f"background: {t_obj.surface_elevated}; border: 1px solid {t_obj.border}; border-radius: 6px;")
+                w.setStyleSheet(f"background: {t_obj.surface_elevated}; border: 1px solid {t_obj.border}; border-radius: {t.RADIUS_SM}px;")
                 lo = QHBoxLayout(w)
                 lo.setContentsMargins(12, 10, 12, 10)
                 lbl = QLabel(label)
-                lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {t_obj.text_secondary}; border: none; background: transparent;")
+                lbl.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t_obj.text_secondary}; border: none; background: transparent;")
                 val = QLabel(valor)
-                val.setStyleSheet(f"font-size: 13px; color: {t_obj.text}; border: none; background: transparent; font-family: Consolas, monospace;")
+                val.setStyleSheet(f"font-size: {t.FONT_MD}px; color: {t_obj.text}; border: none; background: transparent; font-family: Consolas, monospace;")
                 val.setTextInteractionFlags(Qt.TextSelectableByMouse)
                 btn = QPushButton(_copy_icon, "Copiar")
                 btn.setIconSize(QSize(14, 14))
-                btn.setStyleSheet(f"QPushButton {{ background: {t_obj.primary}; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: 11px; }} QPushButton:hover {{ opacity: 0.8; }}")
+                btn.setStyleSheet(f"QPushButton {{ background: {t_obj.primary}; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: {t.FONT_XS}px; }} QPushButton:hover {{ opacity: 0.8; }}")
                 btn.clicked.connect(lambda _, v=valor: QApplication.clipboard().setText(v))
                 lo.addWidget(lbl, 0)
                 lo.addWidget(val, 1)
@@ -2912,7 +3005,7 @@ QTabBar::tab:hover {{
                 btn_pdf.setCursor(Qt.PointingHandCursor)
                 btn_pdf.setStyleSheet(f"""
                     QPushButton {{ background: {t.danger}; color: #fff; border: none;
-                        border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; }}
+                        border-radius: {t.RADIUS_SM}px; padding: 10px 20px; font-size: {t.FONT_MD}px; font-weight: 600; }}
                     QPushButton:hover {{ opacity: 0.85; }}
                 """)
                 btn_pdf.clicked.connect(lambda: subprocess.Popen(["explorer", pdf_caminho]))
@@ -2926,8 +3019,8 @@ QTabBar::tab:hover {{
         btn_fechar = QPushButton("Fechar")
         btn_fechar.setStyleSheet(f"""
             QPushButton {{ background: {t.surface_elevated}; border: 1px solid {t.border};
-                border-radius: 6px; color: {t.text}; padding: 8px 20px;
-                font-size: 13px; font-weight: 600; }}
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px;
+                font-size: {t.FONT_MD}px; font-weight: 600; }}
             QPushButton:hover {{ background: {t.border}; }}
         """)
         btn_fechar.clicked.connect(dlg.accept)
@@ -2944,14 +3037,14 @@ QTabBar::tab:hover {{
         w.setStyleSheet("border: none;")
         layout = QHBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(t.SPACING_XS)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"font-size: 11px; color: {t.text_secondary}; font-weight: 600; border: none;")
+        lbl.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; font-weight: 600; border: none;")
         layout.addWidget(lbl)
 
         val = QLabel(value)
-        val.setStyleSheet(f"font-size: 11px; color: {t.text}; font-weight: 700; border: none;")
+        val.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text}; font-weight: 700; border: none;")
         layout.addWidget(val)
 
         layout.addStretch()
@@ -3012,18 +3105,18 @@ QTabBar::tab:hover {{
             dlg.setStyleSheet(f"""
                 QDialog {{ background-color: {t.bg}; color: {t.text}; }}
                 QTableWidget {{ background-color: {t.bg}; color: {t.text};
-                    border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: 12px; }}
+                    border: 1px solid {t.border}; gridline-color: {t.surface_elevated}; font-size: {t.FONT_SM}px; }}
                 QTableWidget::item {{ padding: 6px; }}
                 QHeaderView::section {{ background: {t.surface}; color: {t.text_secondary};
-                    border: 1px solid {t.border}; padding: 8px; font-weight: 600; font-size: 11px; }}
+                    border: 1px solid {t.border}; padding: {t.SPACING_SM}px; font-weight: 600; font-size: {t.FONT_XS}px; }}
             """)
             layout = QVBoxLayout(dlg)
-            layout.setContentsMargins(16, 16, 16, 16)
+            layout.setContentsMargins(t.SPACING_MD, t.SPACING_MD, t.SPACING_MD, t.SPACING_MD)
             layout.setSpacing(12)
 
             if not rows:
                 lbl = QLabel("Nenhuma pendencia encontrada para este cliente.")
-                lbl.setStyleSheet(f"font-size: 13px; color: {t.text_secondary};")
+                lbl.setStyleSheet(f"font-size: {t.FONT_MD}px; color: {t.text_secondary};")
                 layout.addWidget(lbl)
             else:
                 table = QTableWidget()
@@ -3107,7 +3200,7 @@ QTabBar::tab:hover {{
                 layout.addWidget(table)
 
                 lbl_total = QLabel(f"Total pendente: R$ {total_pendente:.2f}  |  {len(rows)} parcela(s)")
-                lbl_total.setStyleSheet(f"font-size: 12px; color: {t.success}; font-weight: 600; padding: 4px 0;")
+                lbl_total.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.success}; font-weight: 600; padding: {t.SPACING_XS}px 0;")
                 layout.addWidget(lbl_total)
 
             btn_row = QHBoxLayout()
@@ -3117,7 +3210,7 @@ QTabBar::tab:hover {{
                 btn_adicionar = QPushButton("Adicionar Selecionados ao Lote")
                 btn_adicionar.setStyleSheet(f"""
                     QPushButton {{ background: {t.warning}; color: {t.selection_text}; border: none;
-                        border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 600; }}
+                        border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px {t.SPACING_LG}px; font-size: {t.FONT_SM}px; font-weight: 600; }}
                     QPushButton:hover {{ opacity: 0.85; }}
                 """)
                 def _adicionar_ao_lote():
@@ -3149,7 +3242,7 @@ QTabBar::tab:hover {{
             btn_fechar = QPushButton("Fechar")
             btn_fechar.setStyleSheet(f"""
                 QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
-                    border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 600; }}
+                    border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px {t.SPACING_LG}px; font-size: {t.FONT_SM}px; font-weight: 600; }}
                 QPushButton:hover {{ background: {t.primary_hover}; }}
             """)
             btn_fechar.clicked.connect(dlg.accept)
@@ -3462,9 +3555,12 @@ QTabBar::tab:hover {{
                     val = self._format_date(val)
                 else:
                     val = str(val)
+                result = result.replace("{{" + placeholder + "}}", val)
                 result = result.replace("{" + placeholder + "}", val)
-        if "{codigo_barras}" in result or "{linha_digitavel}" in result:
+        if "{{codigo_barras}}" in result or "{{linha_digitavel}}" in result or "{codigo_barras}" in result or "{linha_digitavel}" in result:
             bc = self._calcular_barcode(row)
+            result = result.replace("{{codigo_barras}}", bc or "")
+            result = result.replace("{{linha_digitavel}}", calcular_linha_digitavel(bc) if bc else "")
             result = result.replace("{codigo_barras}", bc or "")
             result = result.replace("{linha_digitavel}", calcular_linha_digitavel(bc) if bc else "")
         return result
@@ -3509,6 +3605,1816 @@ QTabBar::tab:hover {{
             return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         except (ValueError, TypeError):
             return str(raw)
+
+    # ================== COBRANCA AUTOMATICA POR CLIENTE ==================
+
+    def _svg_to_pixmap(self, svg_str: str, size: int, color: str = None) -> QPixmap:
+        if color:
+            svg_str = svg_str.replace('stroke="currentColor"', f'stroke="{color}"')
+        renderer = QSvgRenderer(svg_str.encode("utf-8"))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return pixmap
+
+    def _make_svg_button(self, text: str, svg_str: str, size: int, color: str) -> QPushButton:
+        btn = QPushButton(text)
+        pix = self._svg_to_pixmap(svg_str, size, color)
+        btn.setIcon(QIcon(pix))
+        btn.setIconSize(QSize(size, size))
+        return btn
+
+    def _build_auto_billing_tab(self) -> QWidget:
+        t = theme_manager.current()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setAlignment(Qt.AlignTop)
+        scroll.setStyleSheet(f"QScrollArea {{ background: {t.bg}; border: none; }}")
+
+        container = QWidget()
+        container.setStyleSheet(f"background: {t.bg};")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(t.PAGE_PAD, 20, t.PAGE_PAD, 20)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        title = QLabel("Cobrança Automática por Cliente")
+        title.setStyleSheet(f"font-size: {t.FONT_XL}px; font-weight: 800; color: {t.text};")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_refresh = self._make_svg_button(" Atualizar", SVG_REFRESH, 13, t.text)
+        btn_refresh.setCursor(Qt.PointingHandCursor)
+        btn_refresh.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: 6px 14px;
+                font-size: {t.FONT_XS}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        btn_refresh.clicked.connect(self._refresh_auto_billing)
+        header.addWidget(btn_refresh)
+        layout.addLayout(header)
+
+        create_card = QFrame()
+        create_card.setStyleSheet(f"""
+            QFrame {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 10px; }}
+        """)
+        create_layout = QVBoxLayout(create_card)
+        create_layout.setContentsMargins(t.CARD_PAD, 12, t.CARD_PAD, 12)
+        create_layout.setSpacing(10)
+
+        create_title = QLabel("CRIAR GRUPO")
+        create_title.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 1.5px;")
+        create_layout.addWidget(create_title)
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
+        lbl_name = QLabel("Nome:")
+        lbl_name.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        row1.addWidget(lbl_name)
+        self.ab_txt_group_name = QLineEdit()
+        self.ab_txt_group_name.setPlaceholderText("Ex: Clientes 10 dias antes")
+        self.ab_txt_group_name.setStyleSheet(f"""
+            QLineEdit {{ background: transparent; border: 1px solid {t.border};
+                border-radius: 5px; padding: 6px {t.SPACING_SM}px; color: {t.text}; font-size: {t.FONT_SM}px; }}
+            QLineEdit:focus {{ border-color: {t.primary}; }}
+        """)
+        row1.addWidget(self.ab_txt_group_name)
+
+        lbl_tpl = QLabel("Template:")
+        lbl_tpl.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        row1.addWidget(lbl_tpl)
+        self.ab_cmb_template = QComboBox()
+        self.ab_cmb_template.setMinimumWidth(200)
+        self.ab_cmb_template.setStyleSheet(f"""
+            QComboBox {{ background: transparent; border: 1px solid {t.border};
+                border-radius: 5px; padding: 5px {t.SPACING_SM}px; color: {t.text}; font-size: {t.FONT_SM}px; }}
+            QComboBox::drop-down {{ border: none; padding-right: 6px; }}
+            QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent;
+                border-right: 4px solid transparent; border-top: 5px solid {t.text}; width: 0; height: 0; }}
+            QComboBox QAbstractItemView {{ background: {t.bg}; color: {t.text};
+                selection-background-color: {t.primary}; selection-color: {t.selection_text};
+                border: 1px solid {t.border}; border-radius: 4px; font-size: {t.FONT_SM}px; }}
+        """)
+        row1.addWidget(self.ab_cmb_template)
+        create_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        self.ab_radio_antes = QRadioButton("Dias ANTES:")
+        self.ab_radio_antes.setChecked(True)
+        self.ab_radio_antes.setStyleSheet(f"""
+            QRadioButton {{ color: {t.text}; font-size: {t.FONT_SM}px; font-weight: 600; spacing: 5px; }}
+            QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 7px;
+                border: 2px solid {t.border}; }}
+            QRadioButton::indicator:checked {{ background: {t.primary}; border-color: {t.primary}; }}
+        """)
+        self.ab_spin_antes = QSpinBox()
+        self.ab_spin_antes.setMinimum(1)
+        self.ab_spin_antes.setMaximum(365)
+        self.ab_spin_antes.setValue(2)
+        self.ab_spin_antes.setMinimumWidth(60)
+        self.ab_spin_antes.setStyleSheet(f"""
+            QSpinBox {{ background: transparent; border: 1px solid {t.border};
+                border-radius: 5px; padding: {t.SPACING_XS}px 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
+            QSpinBox:focus {{ border-color: {t.primary}; }}
+        """)
+        row2.addWidget(self.ab_radio_antes)
+        row2.addWidget(self.ab_spin_antes)
+
+        self.ab_radio_no_dia = QRadioButton("No dia")
+        self.ab_radio_no_dia.setStyleSheet(self.ab_radio_antes.styleSheet())
+        row2.addWidget(self.ab_radio_no_dia)
+
+        self.ab_radio_depois = QRadioButton("Dias APÓS:")
+        self.ab_radio_depois.setStyleSheet(self.ab_radio_antes.styleSheet())
+        self.ab_spin_depois = QSpinBox()
+        self.ab_spin_depois.setMinimum(1)
+        self.ab_spin_depois.setMaximum(365)
+        self.ab_spin_depois.setValue(2)
+        self.ab_spin_depois.setMinimumWidth(60)
+        self.ab_spin_depois.setEnabled(False)
+        self.ab_spin_depois.setStyleSheet(self.ab_spin_antes.styleSheet())
+        row2.addWidget(self.ab_radio_depois)
+        row2.addWidget(self.ab_spin_depois)
+
+        self.ab_radio_antes.toggled.connect(lambda e: self.ab_spin_antes.setEnabled(e))
+        self.ab_radio_depois.toggled.connect(lambda e: self.ab_spin_depois.setEnabled(e))
+
+        lbl_time = QLabel("Horário:")
+        lbl_time.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        row2.addWidget(lbl_time)
+        self.ab_time_edit = QTimeEdit()
+        self.ab_time_edit.setDisplayFormat("HH:mm")
+        self.ab_time_edit.setTime(QTime(9, 0))
+        self.ab_time_edit.setStyleSheet(f"""
+            QTimeEdit {{ background: transparent; border: 1px solid {t.border};
+                border-radius: 5px; padding: {t.SPACING_XS}px 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
+            QTimeEdit:focus {{ border-color: {t.primary}; }}
+            QTimeEdit::drop-down {{ border: none; }}
+        """)
+        row2.addWidget(self.ab_time_edit)
+        row2.addStretch()
+
+        btn_criar = QPushButton("+ Criar Grupo")
+        btn_criar.setCursor(Qt.PointingHandCursor)
+        btn_criar.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_SM}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        btn_criar.clicked.connect(self._ab_criar_grupo)
+        row2.addWidget(btn_criar)
+        create_layout.addLayout(row2)
+        layout.addWidget(create_card)
+
+        sep = QLabel("MEUS GRUPOS")
+        sep.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; font-weight: 700; letter-spacing: 1.5px; padding-top: 2px;")
+        layout.addWidget(sep)
+
+        self._ab_groups_container = QVBoxLayout()
+        self._ab_groups_container.setSpacing(t.SPACING_SM)
+        layout.addLayout(self._ab_groups_container)
+
+        self._ab_no_groups_label = QLabel("Nenhum grupo ainda. Crie um grupo acima!")
+        self._ab_no_groups_label.setStyleSheet(f"font-size: {t.FONT_MD}px; color: {t.text_secondary}; padding: {t.SPACING_XL}px;")
+        self._ab_no_groups_label.setAlignment(Qt.AlignCenter)
+        self._ab_groups_container.addWidget(self._ab_no_groups_label)
+
+        layout.addStretch()
+
+        self._ab_groups = []
+        self._ab_expanded_groups = set()
+
+        self._ab_load_groups()
+
+        return container
+
+    def _ab_extract_template_data(self, template_data):
+        api_token = ""
+        flow_id = ""
+        headers_list = template_data.get("headers", DEFAULT_HEADERS)
+        body = template_data.get("body", "")
+        if body:
+            try:
+                body_data = json.loads(body)
+                for action in body_data.get("actions", []):
+                    if action.get("action") == "send_flow" and action.get("flow_id"):
+                        flow_id = str(action["flow_id"])
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+        for h in headers_list:
+            if isinstance(h, (list, tuple)) and len(h) >= 2:
+                if h[0].lower() == "x-access-token":
+                    api_token = str(h[1])
+                if not flow_id and h[0].lower() == "flow_id":
+                    flow_id = str(h[1])
+        return api_token, flow_id, headers_list
+
+    def _ab_load_groups(self):
+        from frontend.app.api.client_billing_api import list_groups
+        def _do():
+            return list_groups()
+        def _on_result(groups):
+            self._ab_groups = []
+            for g in groups:
+                bt_id = g.get("billing_template_id")
+                tpl = {
+                    "name": g.get("template_name", ""),
+                    "method": g.get("template_method", "POST"),
+                    "url": g.get("template_url", ""),
+                    "headers": g.get("template_headers", DEFAULT_HEADERS),
+                    "body": g.get("template_body", ""),
+                    "tag": g.get("template_tag", ""),
+                }
+                if bt_id:
+                    tpl["id"] = bt_id
+                group = {
+                    "id": str(g["id"]),
+                    "name": g["name"],
+                    "template_data": tpl,
+                    "offset_days": g["offset_days"],
+                    "send_time": g["send_time"],
+                    "status": g.get("status", "pending"),
+                    "error_messages": [],
+                    "clients": [{
+                        "codigo": c["client_code"],
+                        "nome": c["client_name"],
+                        "fone": c["client_phone"],
+                        "config_id": c.get("config_id"),
+                        "next_check_date": c.get("next_check_date"),
+                        "_new": False,
+                    } for c in g.get("clients", [])],
+                    "_removed_clients": [],
+                }
+                if group["status"] == "error":
+                    for c in group["clients"]:
+                        if not c.get("config_id"):
+                            group["error_messages"].append(f"{c['nome']} - pendente")
+                self._ab_groups.append(group)
+            self._ab_update_groups_ui()
+        def _on_error(e):
+            pass
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_criar_grupo(self):
+        nome = self.ab_txt_group_name.text().strip()
+        if not nome:
+            show_error(self, "Erro", "Digite um nome para o grupo.")
+            return
+
+        template_data = self.ab_cmb_template.currentData()
+        if not template_data:
+            show_error(self, "Erro", "Selecione um template.")
+            return
+        if not template_data.get("url"):
+            show_error(self, "Erro", "O template selecionado não possui URL configurada.")
+            return
+
+        if self.ab_radio_antes.isChecked():
+            offset = -self.ab_spin_antes.value()
+        elif self.ab_radio_no_dia.isChecked():
+            offset = 0
+        else:
+            offset = self.ab_spin_depois.value()
+
+        send_time = self.ab_time_edit.time().toString("HH:mm")
+        api_token, flow_id, headers_list = self._ab_extract_template_data(template_data)
+
+        tpl_id = template_data.get("id")
+        payload = {
+            "name": nome,
+            "template_name": template_data.get("name", ""),
+            "template_method": template_data.get("method", "POST"),
+            "template_url": template_data.get("url", ""),
+            "template_headers": headers_list,
+            "template_body": template_data.get("body", ""),
+            "template_tag": template_data.get("tag", ""),
+            "api_token": api_token,
+            "flow_id": flow_id,
+            "offset_days": offset,
+            "send_time": send_time,
+            "clients": [],
+        }
+        if tpl_id:
+            payload["billing_template_id"] = tpl_id
+
+        from frontend.app.api.client_billing_api import create_group
+        def _do():
+            return create_group(payload)
+        def _on_result(g):
+            group = {
+                "id": str(g["id"]),
+                "name": nome,
+                "template_data": template_data,
+                "offset_days": offset,
+                "send_time": send_time,
+                "status": "pending",
+                "error_messages": [],
+                "clients": [],
+                "_removed_clients": [],
+            }
+            self._ab_groups.insert(0, group)
+            self.ab_txt_group_name.clear()
+            self._ab_update_groups_ui()
+            show_success(self, "OK", f"Grupo '{nome}' criado!")
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao criar grupo:\n{e}")
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_open_client_selector(self, group_id):
+        t = theme_manager.current()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Selecionar Clientes")
+        dlg.resize(720, 520)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("Selecionar Clientes para Adicionar ao Grupo")
+        title.setStyleSheet(f"font-size: 17px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(10)
+
+        lbl_busca = QLabel("Buscar:")
+        lbl_busca.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        search_row.addWidget(lbl_busca)
+
+        txt_nome = QLineEdit()
+        txt_nome.setPlaceholderText("Nome do cliente...")
+        txt_nome.setStyleSheet(f"""
+            QLineEdit {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 7px; color: {t.text}; font-size: {t.FONT_MD}px; }}
+            QLineEdit:focus {{ border-color: {t.primary}; }}
+        """)
+        search_row.addWidget(txt_nome, 1)
+
+        lbl_pp = QLabel("Por pág.:")
+        lbl_pp.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        search_row.addWidget(lbl_pp)
+
+        cmb_ps = QComboBox()
+        cmb_ps.addItems(["50", "100", "250", "500"])
+        cmb_ps.setCurrentText("100")
+        cmb_ps.setMinimumWidth(80)
+        cmb_ps.setStyleSheet(f"""
+            QComboBox {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 6px; color: {t.text}; font-size: {t.FONT_SM}px; }}
+            QComboBox::drop-down {{ border: none; }}
+            QComboBox QAbstractItemView {{ background: {t.bg}; color: {t.text};
+                selection-background-color: {t.primary}; font-size: {t.FONT_SM}px; }}
+        """)
+        search_row.addWidget(cmb_ps)
+
+        btn_filtrar = QPushButton("Filtrar")
+        btn_filtrar.setCursor(Qt.PointingHandCursor)
+        btn_filtrar.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: {t.RADIUS_SM}px; padding: 7px 18px; font-size: {t.FONT_SM}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        search_row.addWidget(btn_filtrar)
+        layout.addLayout(search_row)
+
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["", "Código", "Nome", "Telefone", "Editar"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        table.horizontalHeader().resizeSection(0, 40)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+        table.horizontalHeader().resizeSection(4, 50)
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(36)
+        table.setStyleSheet(f"""
+            QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                border: 1px solid {t.border}; gridline-color: {t.surface}; font-size: {t.FONT_SM}px; }}
+            QTableWidget::item {{ padding: 6px; }}
+            QTableWidget::item:selected {{
+                background-color: rgba(188,140,255,0.12); color: {t.text};
+            }}
+            QHeaderView::section {{ background: transparent; color: {t.text_secondary};
+                border: none; border-bottom: 1px solid {t.border}; padding: {t.SPACING_SM}px;
+                font-weight: 600; font-size: {t.FONT_XS}px; }}
+        """)
+        table.cellDoubleClicked.connect(lambda r, c: self._ab_selector_open_detail(table, txt_nome.text().strip(), int(cmb_ps.currentText())))
+        layout.addWidget(table, 1)
+
+        pag_row = QHBoxLayout()
+        btn_prev = QPushButton("◀ Anterior")
+        btn_prev.setCursor(Qt.PointingHandCursor)
+        btn_prev.setEnabled(False)
+        btn_prev.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 6px 14px; color: {t.text};
+                font-size: {t.FONT_SM}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+            QPushButton:disabled {{ color: {t.text_secondary}; opacity: 0.4; }}
+        """)
+        pag_row.addWidget(btn_prev)
+
+        lbl_page = QLabel("Página 1")
+        lbl_page.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary}; padding: 0 10px;")
+        pag_row.addWidget(lbl_page)
+
+        btn_next = QPushButton("Próximo ▶")
+        btn_next.setCursor(Qt.PointingHandCursor)
+        btn_next.setEnabled(False)
+        btn_next.setStyleSheet(btn_prev.styleSheet())
+        pag_row.addWidget(btn_next)
+        pag_row.addStretch()
+        layout.addLayout(pag_row)
+
+        lbl_sel = QLabel("0 cliente(s) selecionado(s)")
+        lbl_sel.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
+        layout.addWidget(lbl_sel)
+
+        btn_add = QPushButton("Adicionar Selecionados ao Grupo")
+        btn_add.setCursor(Qt.PointingHandCursor)
+        btn_add.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: {t.RADIUS_MD}px; padding: 10px {t.SPACING_LG}px; font-size: {t.FONT_MD}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+            QPushButton:disabled {{ background: {t.surface}; color: {t.text_secondary}; }}
+        """)
+        btn_add.setEnabled(False)
+
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_MD}px; padding: 10px 20px; color: {t.text};
+                font-size: {t.FONT_MD}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_add)
+        layout.addLayout(btn_row)
+
+        dlg._txt_nome = txt_nome
+        dlg._cmb_ps = cmb_ps
+        dlg._table = table
+        dlg._btn_prev = btn_prev
+        dlg._btn_next = btn_next
+        dlg._lbl_page = lbl_page
+        dlg._lbl_sel = lbl_sel
+        dlg._btn_add = btn_add
+        dlg._results_data = []
+        dlg._selected_rows = set()
+        dlg._page = 0
+        dlg._has_more = False
+
+        dlg._chk_tipos = []
+        dlg._tipos_data = []
+
+        def _load_tipos():
+            from frontend.app.api.client_billing_api import list_tipos_cliente
+            def _do():
+                return list_tipos_cliente()
+            def _on_result(data):
+                dlg._tipos_data = data
+                for tp in data:
+                    cb = QCheckBox(tp["descr_tipo"])
+                    cb.setProperty("cod_tipo", tp["cod_tipo"])
+                    cb.setStyleSheet(f"QCheckBox {{ color: {t.text}; font-size: {t.FONT_SM}px; spacing: 6px; }}")
+                    tipo_row.addWidget(cb)
+                    dlg._chk_tipos.append(cb)
+            def _on_error(e):
+                pass
+            run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+        tipo_row = QHBoxLayout()
+        tipo_row.setSpacing(6)
+        lbl_tipo = QLabel("Tipo:")
+        lbl_tipo.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; font-weight: 600;")
+        tipo_row.addWidget(lbl_tipo)
+        layout.addLayout(tipo_row)
+        _load_tipos()
+
+        sel_tipo_row = QHBoxLayout()
+        sel_tipo_row.setSpacing(t.SPACING_SM)
+        btn_select_tipo = QPushButton("Selecionar por Tipo")
+        btn_select_tipo.setCursor(Qt.PointingHandCursor)
+        btn_select_tipo.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.primary};
+                border-radius: {t.RADIUS_SM}px; padding: 5px 14px; color: {t.primary};
+                font-size: {t.FONT_XS}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; color: {t.selection_text}; }}
+        """)
+        btn_clear_sel = QPushButton("Desmarcar Todos")
+        btn_clear_sel.setCursor(Qt.PointingHandCursor)
+        btn_clear_sel.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 5px 14px; color: {t.text};
+                font-size: {t.FONT_XS}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        sel_tipo_row.addWidget(btn_select_tipo)
+        sel_tipo_row.addWidget(btn_clear_sel)
+        sel_tipo_row.addStretch()
+        layout.addLayout(sel_tipo_row)
+
+        btn_filtrar.clicked.connect(lambda: self._ab_selector_filtrar(dlg, group_id=group_id))
+        txt_nome.returnPressed.connect(lambda: self._ab_selector_filtrar(dlg, group_id=group_id))
+        btn_prev.clicked.connect(lambda: self._ab_selector_pag_prev(dlg, group_id=group_id))
+        btn_next.clicked.connect(lambda: self._ab_selector_pag_next(dlg, group_id=group_id))
+        btn_add.clicked.connect(lambda: self._ab_add_selected_to_group(group_id, dlg))
+        btn_select_tipo.clicked.connect(lambda: self._ab_selector_select_by_tipo(group_id, dlg))
+        btn_clear_sel.clicked.connect(lambda: self._ab_selector_clear_selection(dlg))
+        btn_cancel.clicked.connect(dlg.reject)
+
+        self._ab_selector_filtrar(dlg, group_id=group_id)
+        dlg.exec()
+
+    def _ab_selector_open_detail(self, table, nome, page_size):
+        row = table.currentRow()
+        data = getattr(table, '_results_data', None)
+        if data and 0 <= row < len(data):
+            r = data[row]
+            client_code = str(r.get("codigo", ""))
+            if client_code:
+                from frontend.app.api.client_billing_api import get_client_pendencias
+                def _do():
+                    return get_client_pendencias(client_code)
+                def _on_result(data):
+                    if data:
+                        self._ab_show_client_detail_dialog(data)
+                def _on_error(e):
+                    show_error(self, "Erro", f"Falha ao carregar dados:\n{e}")
+                run_in_thread(_do, _on_result, _on_error)
+
+    def _ab_show_client_detail_dialog(self, data: dict):
+        t = theme_manager.current()
+        from PySide6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+            QHeaderView, QPushButton, QLabel, QFrame, QGridLayout
+        )
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Cliente - {data.get('client_name', data.get('client_code', ''))}")
+        dlg.resize(750, 550)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD, t.PAGE_PAD)
+        layout.setSpacing(14)
+        title = QLabel("Dados do Cliente")
+        title.setStyleSheet(f"font-size: {t.FONT_XL}px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        info_card = QFrame()
+        info_card.setStyleSheet(f"QFrame {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 10px; }}")
+        info_grid = QGridLayout(info_card)
+        info_grid.setContentsMargins(t.CARD_PAD, 14, t.CARD_PAD, 14)
+        info_grid.setSpacing(t.SPACING_SM)
+        fields = [
+            ("Código:", data.get("client_code", "")), ("Nome:", data.get("client_name", "")),
+            ("CPF/CNPJ:", data.get("cpf_cnpj", "")), ("Telefone:", data.get("fone", "")),
+            ("Endereço:", data.get("endereco", "")), ("Número:", data.get("numero", "")),
+            ("Bairro:", data.get("bairro", "")), ("Cidade:", data.get("cidade", "")),
+        ]
+        for i, (label, value) in enumerate(fields):
+            lbl = QLabel(label)
+            lbl.setStyleSheet(f"font-size: {t.FONT_SM}px; font-weight: 600; color: {t.text_secondary}; background: transparent; border: none;")
+            val = QLabel(str(value) if value else "-")
+            val.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text}; background: transparent; border: none;")
+            val.setWordWrap(True)
+            info_grid.addWidget(lbl, i // 2, (i % 2) * 2)
+            info_grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
+        layout.addWidget(info_card)
+
+        pendencias = data.get("pendencias", [])
+        if pendencias:
+            pend_title = QLabel(f"Pendências ({len(pendencias)})")
+            pend_title.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {t.text}; padding-top: 4px;")
+            layout.addWidget(pend_title)
+            table = QTableWidget()
+            table.setColumnCount(6)
+            table.setHorizontalHeaderLabels(["Documento", "Emissão", "Vencimento", "Valor Total", "Valor Pendente", "Situação"])
+            for c in range(6):
+                table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+            table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+            table.setAlternatingRowColors(True)
+            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.verticalHeader().setVisible(False)
+            table.verticalHeader().setDefaultSectionSize(28)
+            table.setStyleSheet(f"""
+                QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                    border: 1px solid {t.border}; gridline-color: {t.surface}; font-size: {t.FONT_XS}px; }}
+                QTableWidget::item:selected {{
+                    background-color: rgba(188,140,255,0.12); color: {t.text};
+                }}
+                QHeaderView::section {{ background: transparent; color: {t.text_secondary};
+                    border: none; border-bottom: 1px solid {t.border}; padding: 6px; font-weight: 600; font-size: {t.FONT_XS}px; }}
+            """)
+            for p in pendencias:
+                r = table.rowCount()
+                table.insertRow(r)
+                table.setItem(r, 0, QTableWidgetItem(str(p.get("documento_str", ""))))
+                table.setItem(r, 1, QTableWidgetItem(str(p.get("emissao", ""))[:10]))
+                table.setItem(r, 2, QTableWidgetItem(str(p.get("vencimento", ""))[:10]))
+                table.setItem(r, 3, QTableWidgetItem(self._format_valor(p.get("valor_total", 0))))
+                table.setItem(r, 4, QTableWidgetItem(self._format_valor(p.get("valor_pendente", 0))))
+                sit = str(p.get("situacao", ""))
+                sit_item = QTableWidgetItem("Paga" if sit == "P" else "Pendente")
+                sit_item.setForeground(QColor(t.success) if sit == "P" else QColor(t.warning))
+                table.setItem(r, 5, sit_item)
+            layout.addWidget(table, 1)
+        else:
+            no_pend = QLabel("Nenhuma pendência encontrada.")
+            no_pend.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary}; padding: {t.SPACING_MD}px;")
+            no_pend.setAlignment(Qt.AlignCenter)
+            layout.addWidget(no_pend)
+
+        btn_close = QPushButton("Fechar")
+        btn_close.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        btn_close.clicked.connect(dlg.accept)
+        br = QHBoxLayout()
+        br.addStretch()
+        br.addWidget(btn_close)
+        layout.addLayout(br)
+        dlg.exec()
+
+    def _ab_selector_get_tipo(self, dlg):
+        codigos = []
+        for cb in dlg._chk_tipos:
+            if cb.isChecked():
+                codigos.append(cb.property("cod_tipo"))
+        return ",".join(codigos)
+
+    def _ab_selector_filtrar(self, dlg, page=None, keep_page=False, group_id=None):
+        if page is not None:
+            dlg._page = page
+        elif not keep_page:
+            dlg._page = 0
+
+        nome = dlg._txt_nome.text().strip()
+        page_size = min(int(dlg._cmb_ps.currentText()), 500)
+        tipo = self._ab_selector_get_tipo(dlg)
+
+        dlg._btn_add.setEnabled(False)
+
+        from frontend.app.api.client_billing_api import list_clientes
+        def _do():
+            return list_clientes(page=dlg._page, nome=nome, page_size=page_size, tipo=tipo)
+        def _on_result(data):
+            rows = data.get("data", [])
+            grouped_codes = set()
+            if group_id:
+                for g in self._ab_groups:
+                    for c in g["clients"]:
+                        grouped_codes.add(c["codigo"])
+            filtered = [r for r in rows if str(r.get("codigo", "")) not in grouped_codes]
+            dlg._results_data = filtered
+            dlg._selected_rows.clear()
+            dlg._has_more = data.get("has_more", False)
+            self._ab_selector_update_table(dlg)
+            self._ab_selector_update_buttons(dlg)
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao consultar clientes:\n{e}")
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_selector_update_table(self, dlg):
+        table = dlg._table
+        t = theme_manager.current()
+        table.setUpdatesEnabled(False)
+        table.setRowCount(len(dlg._results_data))
+        for idx, row in enumerate(dlg._results_data):
+            cb = QCheckBox()
+            cb.setChecked(idx in dlg._selected_rows)
+            cb.stateChanged.connect(lambda state, d=dlg, i=idx: self._ab_selector_on_check(d, i, state))
+            cw = QWidget()
+            cl = QHBoxLayout(cw)
+            cl.setContentsMargins(0, 0, 0, 0)
+            cl.setAlignment(Qt.AlignCenter)
+            cl.addWidget(cb)
+            table.setCellWidget(idx, 0, cw)
+            table.setItem(idx, 1, QTableWidgetItem(str(row.get("codigo", "") or "")))
+            table.setItem(idx, 2, QTableWidgetItem(str(row.get("nome", "") or "")))
+            phone_item = QTableWidgetItem(str(row.get("fone", "") or "").strip())
+            phone_item.setFlags(phone_item.flags() | Qt.ItemIsEditable)
+            table.setItem(idx, 3, phone_item)
+            btn_edit = QPushButton()
+            edit_pix = self._svg_to_pixmap(SVG_EDIT, 14, t.svg_icon)
+            btn_edit.setIcon(QIcon(edit_pix))
+            btn_edit.setIconSize(QSize(14, 14))
+            btn_edit.setFixedSize(28, 26)
+            btn_edit.setStyleSheet(f"""
+                QPushButton {{ background: {t.surface}; border: 1px solid {t.border};
+                    border-radius: 4px; padding: 0; min-height: 0; }}
+                QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.12);
+                    border-color: rgba({_hex_to_rgb(t.primary)},0.3); }}
+            """)
+            btn_edit.setToolTip("Editar nome e telefone")
+            codigo = str(row.get("codigo", ""))
+            nome = str(row.get("nome", "") or "")
+            fone = str(row.get("fone", "") or "").strip()
+            btn_edit.clicked.connect(lambda checked, t=table, r=row, i=idx: self._ab_edit_client_in_selector(t, i, r))
+            table.setCellWidget(idx, 4, btn_edit)
+        table._results_data = dlg._results_data
+        table.setUpdatesEnabled(True)
+        self._ab_selector_update_count(dlg)
+
+    def _ab_edit_client_in_selector(self, table, idx, row):
+        from PySide6.QtWidgets import QFormLayout
+        t = theme_manager.current()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Editar Cliente")
+        dlg.resize(380, 200)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        title = QLabel("Editar dados do cliente")
+        title.setStyleSheet(f"font-size: {t.FONT_LG}px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        fl = QFormLayout()
+        fl.setSpacing(t.SPACING_SM)
+        lbl_cod = QLabel(f"Código: {row.get('codigo', '')}")
+        lbl_cod.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
+        fl.addRow(lbl_cod)
+
+        txt_nome = QLineEdit(str(row.get("nome", "") or ""))
+        txt_nome.setStyleSheet(f"""
+            QLineEdit {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 7px; color: {t.text}; font-size: {t.FONT_MD}px; }}
+            QLineEdit:focus {{ border-color: {t.primary}; }}
+        """)
+        fl.addRow("Nome:", txt_nome)
+
+        txt_fone = QLineEdit(str(row.get("fone", "") or "").strip())
+        txt_fone.setStyleSheet(txt_nome.styleSheet())
+        fl.addRow("Telefone:", txt_fone)
+        layout.addLayout(fl)
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        btn_cancel.clicked.connect(dlg.reject)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+
+        btn_ok = QPushButton("Salvar")
+        btn_ok.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px {t.SPACING_LG}px; font-size: {t.FONT_MD}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        btn_ok.clicked.connect(dlg.accept)
+        btn_row.addWidget(btn_ok)
+        layout.addLayout(btn_row)
+
+        if dlg.exec():
+            novo_nome = txt_nome.text().strip()
+            novo_fone = txt_fone.text().strip()
+            if table.item(idx, 2):
+                table.item(idx, 2).setText(novo_nome)
+            if table.item(idx, 3):
+                table.item(idx, 3).setText(novo_fone)
+            row["nome"] = novo_nome
+            row["fone"] = novo_fone
+
+    def _ab_selector_on_check(self, dlg, idx, state):
+        if state == 2:
+            dlg._selected_rows.add(idx)
+        else:
+            dlg._selected_rows.discard(idx)
+        self._ab_selector_update_count(dlg)
+
+    def _ab_selector_update_count(self, dlg):
+        count = len(dlg._selected_rows)
+        dlg._lbl_sel.setText(f"{count} cliente(s) selecionado(s)")
+        dlg._btn_add.setEnabled(count > 0)
+
+    def _ab_selector_update_buttons(self, dlg):
+        dlg._btn_prev.setEnabled(dlg._page > 0)
+        dlg._btn_next.setEnabled(dlg._has_more)
+        dlg._lbl_page.setText(f"Página {dlg._page + 1}")
+
+    def _ab_selector_pag_next(self, dlg, group_id=None):
+        if dlg._has_more:
+            dlg._page += 1
+            self._ab_selector_filtrar(dlg, keep_page=True, group_id=group_id)
+
+    def _ab_selector_pag_prev(self, dlg, group_id=None):
+        if dlg._page > 0:
+            dlg._page -= 1
+            self._ab_selector_filtrar(dlg, keep_page=True, group_id=group_id)
+
+    def _ab_selector_select_by_tipo(self, group_id, dlg):
+        tipo = self._ab_selector_get_tipo(dlg)
+        if not tipo:
+            show_error(self, "Aviso", "Marque pelo menos um tipo para selecionar.")
+            return
+
+        from frontend.app.api.client_billing_api import list_clientes
+        def _do():
+            all_rows = []
+            page = 0
+            page_size = 500
+            while True:
+                data = list_clientes(page=page, nome="", page_size=page_size, tipo=tipo)
+                rows = data.get("data", [])
+                if not rows:
+                    break
+                all_rows.extend(rows)
+                if not data.get("has_more", False):
+                    break
+                page += 1
+            return all_rows
+
+        def _on_result(rows):
+            grouped_codes = set()
+            if group_id:
+                for g in self._ab_groups:
+                    for c in g["clients"]:
+                        grouped_codes.add(c["codigo"])
+            filtered = [r for r in rows if str(r.get("codigo", "")) not in grouped_codes]
+            dlg._selected_rows = set(range(len(filtered)))
+            dlg._results_data = filtered
+            dlg._page = 0
+            dlg._has_more = False
+            self._ab_selector_update_table(dlg)
+            self._ab_selector_update_buttons(dlg)
+            show_success(self, "OK", f"{len(filtered)} cliente(s) encontrado(s) e selecionado(s).")
+
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao selecionar por tipo:\n{e}")
+
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_selector_clear_selection(self, dlg):
+        dlg._selected_rows.clear()
+        self._ab_selector_update_table(dlg)
+
+    def _ab_add_selected_to_group(self, group_id, dlg):
+        group = None
+        for g in self._ab_groups:
+            if g["id"] == group_id:
+                group = g
+                break
+        if not group:
+            show_error(self, "Erro", "Grupo não encontrado.")
+            return
+
+        added = 0
+        for idx in sorted(dlg._selected_rows, reverse=True):
+            if idx >= len(dlg._results_data):
+                continue
+            row = dlg._results_data[idx]
+            codigo = str(row.get("codigo", ""))
+            if codigo not in [c["codigo"] for c in group["clients"]]:
+                table = dlg._table
+                name = table.item(idx, 2).text().strip() if table.item(idx, 2) else str(row.get("nome", "") or "")
+                phone = table.item(idx, 3).text().strip() if table.item(idx, 3) else ""
+                client_entry = {
+                    "codigo": codigo,
+                    "nome": name,
+                    "fone": phone or str(row.get("fone", "") or "").strip(),
+                }
+                client_entry["config_id"] = None
+                client_entry["_new"] = group["status"] in ("registered", "error")
+                group["_has_unsaved"] = True
+                group["clients"].append(client_entry)
+                added += 1
+
+        if added > 0:
+            dlg.accept()
+            self._ab_update_groups_ui()
+            show_success(self, "OK", f"{added} cliente(s) adicionado(s) ao grupo '{group['name']}'.")
+        else:
+            show_error(self, "Aviso", "Clientes já estão no grupo.")
+
+    def _ab_update_groups_ui(self):
+        t = theme_manager.current()
+        for i in reversed(range(self._ab_groups_container.count())):
+            w = self._ab_groups_container.itemAt(i).widget()
+            if w and w != self._ab_no_groups_label:
+                w.deleteLater()
+        self._ab_no_groups_label.setVisible(len(self._ab_groups) == 0)
+
+        for g in self._ab_groups:
+            gid = g["id"]
+            is_expanded = gid in self._ab_expanded_groups
+            has_unsaved = g.get("_has_unsaved", False)
+            status = g.get("status", "pending")
+            n_errors = len(g.get("error_messages", []))
+
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 10px; }}
+            """)
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 10, 14, 10)
+            card_layout.setSpacing(6)
+
+            top_row = QHBoxLayout()
+            top_row.setSpacing(t.SPACING_SM)
+
+            if status == "pending":
+                status_label = "Pendente"
+                status_color = t.warning
+                dot_svg = SVG_CLOCK
+            elif status == "registered":
+                status_label = "Registrado"
+                status_color = t.success
+                dot_svg = SVG_CHECK_CIRCLE
+            else:
+                status_label = "Com Erros"
+                status_color = t.danger
+                dot_svg = SVG_ALERT
+
+            dot_pix = self._svg_to_pixmap(dot_svg, 16, status_color)
+            dot_lbl = QLabel()
+            dot_lbl.setPixmap(dot_pix)
+            dot_lbl.setStyleSheet("border: none; background: transparent;")
+            top_row.addWidget(dot_lbl)
+
+            name_lbl = QLabel(g["name"])
+            name_lbl.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {t.text}; border: none; background: transparent;")
+            top_row.addWidget(name_lbl)
+
+            if status == "error":
+                status_tag = QLabel("Erro")
+                status_tag.setStyleSheet(f"""
+                    background: {t.surface}; border: 1px solid {status_color}; border-radius: {t.RADIUS_MD}px;
+                    color: {status_color}; padding: 1px {t.SPACING_SM}px; font-size: 10px; font-weight: 700;
+                """)
+            else:
+                status_tag = QLabel(status_label)
+                status_tag.setStyleSheet(f"""
+                    background: {t.surface}; border: 1px solid {status_color}; border-radius: {t.RADIUS_MD}px;
+                    color: {status_color}; padding: 1px {t.SPACING_SM}px; font-size: 10px; font-weight: 700;
+                """)
+            top_row.addWidget(status_tag)
+
+            if has_unsaved:
+                unsaved_w = QWidget()
+                unsaved_w.setStyleSheet("background: transparent; border: none;")
+                unsaved_l = QHBoxLayout(unsaved_w)
+                unsaved_l.setContentsMargins(0, 0, 0, 0)
+                unsaved_l.setSpacing(3)
+                edit_pix = self._svg_to_pixmap(SVG_EDIT, 10, t.warning)
+                edit_lbl = QLabel()
+                edit_lbl.setPixmap(edit_pix)
+                edit_lbl.setStyleSheet("border: none; background: transparent;")
+                unsaved_l.addWidget(edit_lbl)
+                unsaved_txt = QLabel("Não salvo")
+                unsaved_txt.setStyleSheet(f"color: {t.warning}; font-size: 10px; font-weight: 700; border: none; background: transparent;")
+                unsaved_l.addWidget(unsaved_txt)
+                top_row.addWidget(unsaved_w)
+
+            top_row.addStretch()
+
+            if has_unsaved:
+                btn_save = self._make_svg_button(" Salvar", SVG_SAVE, 11, t.success)
+                btn_save.setCursor(Qt.PointingHandCursor)
+                btn_save.setStyleSheet(f"""
+                    QPushButton {{ background: transparent; border: 1px solid {t.success};
+                        border-radius: 5px; color: {t.success}; padding: {t.SPACING_XS}px 12px;
+                        font-size: 10px; font-weight: 700; }}
+                    QPushButton:hover {{ background: rgba(63,185,80,0.08); }}
+                """)
+                btn_save.clicked.connect(lambda checked, gid=gid: self._ab_save_group(gid))
+                top_row.addWidget(btn_save)
+
+            btn_remover = self._make_svg_button(" Remover", SVG_TRASH, 11, t.danger)
+            btn_remover.setCursor(Qt.PointingHandCursor)
+            btn_remover.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.danger};
+                    border-radius: 5px; color: {t.danger}; padding: {t.SPACING_XS}px 12px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba(248,81,73,0.08); }}
+            """)
+            btn_remover.clicked.connect(lambda checked, gid=gid: self._ab_remover_grupo(gid))
+            top_row.addWidget(btn_remover)
+
+            btn_edit_group = QPushButton("✎ Editar")
+            btn_edit_group.setCursor(Qt.PointingHandCursor)
+            btn_edit_group.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.primary};
+                    border-radius: 5px; color: {t.primary}; padding: {t.SPACING_XS}px 10px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba(31,111,235,0.08); }}
+            """)
+            btn_edit_group.clicked.connect(lambda checked, gid=gid: self._ab_edit_group_dialog(gid))
+            top_row.addWidget(btn_edit_group)
+
+            if status == "registered":
+                btn_testar = QPushButton("▶ Testar")
+                btn_testar.setCursor(Qt.PointingHandCursor)
+                btn_testar.setStyleSheet(f"""
+                    QPushButton {{ background: transparent; border: 1px solid {t.info};
+                        border-radius: 5px; color: {t.info}; padding: {t.SPACING_XS}px 12px;
+                        font-size: 10px; font-weight: 700; }}
+                    QPushButton:hover {{ background: rgba(88,166,255,0.08); }}
+                """)
+                btn_testar.clicked.connect(lambda checked, gid=gid: self._ab_testar_grupo(gid))
+                top_row.addWidget(btn_testar)
+
+            card_layout.addLayout(top_row)
+
+            tpl_name = g["template_data"].get("name", "?")
+            offset = g["offset_days"]
+            if offset < 0:
+                offset_txt = f"{abs(offset)} dia(s) antes"
+            elif offset == 0:
+                offset_txt = "no dia"
+            else:
+                offset_txt = f"{offset} dia(s) após"
+
+            info_row = QHBoxLayout()
+            info_row.setSpacing(t.SPACING_SM)
+
+            toggle_icon = "▼" if is_expanded else "▶"
+            toggle_lbl = QLabel(toggle_icon)
+            toggle_lbl.setStyleSheet(f"font-size: 10px; color: {t.text_secondary}; border: none; background: transparent;")
+            toggle_lbl.setCursor(Qt.PointingHandCursor)
+            info_row.addWidget(toggle_lbl)
+
+            info_text = QLabel(f"Template: {tpl_name}  ·  {offset_txt}  ·  {g['send_time']}  ·  {len(g['clients'])} cliente(s)")
+            info_text.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; border: none; background: transparent;")
+            info_text.setCursor(Qt.PointingHandCursor)
+            info_row.addWidget(info_text)
+            info_row.addStretch()
+
+            btn_add = self._make_svg_button(" Adicionar", SVG_PLUS, 11, t.primary)
+            btn_add.setCursor(Qt.PointingHandCursor)
+            btn_add.setStyleSheet(f"""
+                QPushButton {{ background: transparent; border: 1px solid {t.primary};
+                    border-radius: 5px; color: {t.primary}; padding: {t.SPACING_XS}px 10px;
+                    font-size: 10px; font-weight: 600; }}
+                QPushButton:hover {{ background: rgba(31,111,235,0.08); }}
+            """)
+            btn_add.clicked.connect(lambda checked, gid=gid: self._ab_open_client_selector(gid))
+            info_row.addWidget(btn_add)
+
+            if status == "pending":
+                btn_reg = QPushButton("Registrar ▸")
+                btn_reg.setCursor(Qt.PointingHandCursor)
+                btn_reg.setStyleSheet(f"""
+                    QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                        border-radius: 5px; padding: {t.SPACING_XS}px 12px; font-size: 10px; font-weight: 700; }}
+                    QPushButton:hover {{ background: {t.primary_hover}; }}
+                """)
+                btn_reg.clicked.connect(lambda checked, gid=gid: self._ab_register_group(gid))
+                info_row.addWidget(btn_reg)
+
+            card_layout.addLayout(info_row)
+
+            if is_expanded:
+                detail_widget = QWidget()
+                detail_widget.setStyleSheet("background: transparent;")
+                detail_layout = QVBoxLayout(detail_widget)
+                detail_layout.setContentsMargins(20, 2, 0, 0)
+                detail_layout.setSpacing(2)
+
+                if g.get("error_messages"):
+                    for err in g["error_messages"]:
+                        err_row = QWidget()
+                        err_row.setStyleSheet("background: transparent;")
+                        err_l = QHBoxLayout(err_row)
+                        err_l.setContentsMargins(0, 2, 0, 2)
+                        err_l.setSpacing(6)
+                        err_pix = self._svg_to_pixmap(SVG_ALERT, 12, t.danger)
+                        err_icon = QLabel()
+                        err_icon.setPixmap(err_pix)
+                        err_icon.setStyleSheet("border: none; background: transparent;")
+                        err_l.addWidget(err_icon)
+                        err_txt = QLabel(err)
+                        err_txt.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.danger}; background: transparent; border: none;")
+                        err_l.addWidget(err_txt)
+                        err_l.addStretch()
+                        detail_layout.addWidget(err_row)
+
+                if g["clients"]:
+                    PAGE_SIZE = 50
+                    page = g.setdefault("_clients_page", 0)
+                    total = len(g["clients"])
+                    max_page = max(0, (total - 1) // PAGE_SIZE)
+                    if page > max_page:
+                        page = max_page
+                        g["_clients_page"] = page
+                    start = page * PAGE_SIZE
+                    end = min(start + PAGE_SIZE, total)
+
+                    client_table = QTableWidget()
+                    client_table.setColumnCount(7)
+                    client_table.setHorizontalHeaderLabels(["", "Código", "Nome", "Telefone", "Editar", "Status", "Próx. Cobrança"])
+                    client_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(0, 36)
+                    client_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(1, 65)
+                    client_table.horizontalHeader().setStretchLastSection(False)
+                    client_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+                    client_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(3, 120)
+                    client_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(4, 60)
+                    client_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(5, 105)
+                    client_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Fixed)
+                    client_table.horizontalHeader().resizeSection(6, 110)
+                    client_table.verticalHeader().setVisible(False)
+                    client_table.verticalHeader().setDefaultSectionSize(34)
+                    client_table.setSelectionMode(QTableWidget.NoSelection)
+                    client_table.setFocusPolicy(Qt.NoFocus)
+                    client_table.setMaximumHeight(360)
+                    client_table.setStyleSheet(f"""
+                        QTableWidget {{ background-color: {t.bg}; color: {t.text};
+                            border: 1px solid {t.border}; gridline-color: {t.border}; font-size: {t.FONT_SM}px; }}
+                        QTableWidget::item {{ padding: {t.SPACING_XS}px {t.SPACING_SM}px; }}
+                        QTableWidget::item:selected {{
+                            background-color: rgba(188,140,255,0.12); color: {t.text};
+                        }}
+                        QHeaderView::section {{ background: transparent; color: {t.text_secondary};
+                            border: none; border-bottom: 1px solid {t.border}; padding: 6px {t.SPACING_SM}px;
+                            font-weight: 600; font-size: {t.FONT_XS}px; }}
+                    """)
+                    client_table.setRowCount(end - start)
+                    for ri, c in enumerate(g["clients"][start:end]):
+                        rm_pix = self._svg_to_pixmap(SVG_X, 12, t.danger)
+                        rm_btn = QPushButton()
+                        rm_btn.setIcon(QIcon(rm_pix))
+                        rm_btn.setIconSize(QSize(12, 12))
+                        rm_btn.setFixedSize(22, 22)
+                        rm_btn.setStyleSheet(f"""
+                            QPushButton {{ background: {t.surface}; border: 1px solid {t.border};
+                                border-radius: 4px; padding: 0; min-height: 0; }}
+                            QPushButton:hover {{ background: rgba(248,81,73,0.15); border-color: {t.danger}; }}
+                        """)
+                        cod = c["codigo"]
+                        rm_btn.clicked.connect(lambda checked, gid=gid, cod=cod: self._ab_remove_client_from_group(gid, cod))
+                        rmw = QWidget()
+                        rml = QHBoxLayout(rmw)
+                        rml.setContentsMargins(0, 0, 0, 0)
+                        rml.setAlignment(Qt.AlignCenter)
+                        rml.addWidget(rm_btn)
+                        client_table.setCellWidget(ri, 0, rmw)
+
+                        code_item = QTableWidgetItem(str(c.get("codigo", "")))
+                        code_item.setFlags(code_item.flags() & ~Qt.ItemIsEditable)
+                        client_table.setItem(ri, 1, code_item)
+                        client_table.setItem(ri, 2, QTableWidgetItem(str(c.get("nome", ""))))
+                        client_table.setItem(ri, 3, QTableWidgetItem(str(c.get("fone", "") or "").strip()))
+
+                        next_date = c.get("next_check_date")
+                        if next_date:
+                            date_item = QTableWidgetItem(str(next_date))
+                            date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+                        else:
+                            date_item = QTableWidgetItem("—")
+                            date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+                        client_table.setItem(ri, 6, date_item)
+
+                        ed_pix = self._svg_to_pixmap(SVG_EDIT, 12, t.svg_icon)
+                        ed_btn = QPushButton()
+                        ed_btn.setIcon(QIcon(ed_pix))
+                        ed_btn.setIconSize(QSize(12, 12))
+                        ed_btn.setFixedSize(24, 24)
+                        ed_btn.setStyleSheet(f"""
+                            QPushButton {{ background: {t.surface}; border: 1px solid {t.border};
+                                border-radius: 4px; padding: 0; min-height: 0; }}
+                            QPushButton:hover {{ background: rgba({_hex_to_rgb(t.primary)},0.12);
+                                border-color: rgba({_hex_to_rgb(t.primary)},0.3); }}
+                        """)
+                        ed_btn.clicked.connect(lambda checked, gid=gid, cod=cod: self._ab_edit_client_in_group(gid, cod))
+                        edw = QWidget()
+                        edl = QHBoxLayout(edw)
+                        edl.setContentsMargins(0, 0, 0, 0)
+                        edl.setAlignment(Qt.AlignCenter)
+                        edl.addWidget(ed_btn)
+                        client_table.setCellWidget(ri, 4, edw)
+
+                        if c.get("config_id"):
+                            st = QWidget()
+                            sl = QHBoxLayout(st)
+                            sl.setContentsMargins(0, 0, 0, 0)
+                            sl.setSpacing(t.SPACING_XS)
+                            ch_pix = self._svg_to_pixmap(SVG_CHECK, 14, t.success)
+                            ch_lbl = QLabel()
+                            ch_lbl.setPixmap(ch_pix)
+                            sl.addWidget(ch_lbl)
+                            sl.addWidget(QLabel("registrado"))
+                            sl.addStretch()
+                            client_table.setCellWidget(ri, 5, st)
+                        elif c.get("_new"):
+                            st = QWidget()
+                            sl = QHBoxLayout(st)
+                            sl.setContentsMargins(0, 0, 0, 0)
+                            sl.setSpacing(t.SPACING_XS)
+                            cl_pix = self._svg_to_pixmap(SVG_CLOCK, 14, t.warning)
+                            cl_lbl = QLabel()
+                            cl_lbl.setPixmap(cl_pix)
+                            sl.addWidget(cl_lbl)
+                            sl.addWidget(QLabel("pendente"))
+                            sl.addStretch()
+                            client_table.setCellWidget(ri, 5, st)
+
+                    detail_layout.addWidget(client_table)
+
+                    if total > PAGE_SIZE:
+                        pag_row = QHBoxLayout()
+                        pag_row.setContentsMargins(0, t.SPACING_XS, 0, 0)
+                        pag_row.setSpacing(t.SPACING_SM)
+                        btn_prev = QPushButton("◀ Anterior")
+                        btn_prev.setEnabled(page > 0)
+                        btn_prev.setCursor(Qt.PointingHandCursor)
+                        btn_prev.setStyleSheet(f"""
+                            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_XS}px 12px; color: {t.text};
+                                font-size: {t.FONT_XS}px; font-weight: 600; }}
+                            QPushButton:hover {{ background: {t.surface}; }}
+                            QPushButton:disabled {{ color: {t.text_secondary}; opacity: 0.4; }}
+                        """)
+                        btn_prev.clicked.connect(lambda checked, gid=gid: self._ab_group_paginate(gid, -1))
+                        pag_row.addWidget(btn_prev)
+
+                        lbl_page = QLabel(f"Página {page + 1} de {max_page + 1} ({total} clientes)")
+                        lbl_page.setStyleSheet(f"font-size: {t.FONT_XS}px; color: {t.text_secondary}; padding: 0 6px;")
+                        pag_row.addWidget(lbl_page)
+
+                        btn_next = QPushButton("Próximo ▶")
+                        btn_next.setEnabled(page < max_page)
+                        btn_next.setCursor(Qt.PointingHandCursor)
+                        btn_next.setStyleSheet(btn_prev.styleSheet())
+                        btn_next.clicked.connect(lambda checked, gid=gid: self._ab_group_paginate(gid, 1))
+                        pag_row.addWidget(btn_next)
+                        pag_row.addStretch()
+                        detail_layout.addLayout(pag_row)
+                else:
+                    no_cl = QLabel("Nenhum cliente neste grupo.")
+                    no_cl.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary}; background: transparent; border: none; padding: {t.SPACING_XS}px 0;")
+                    detail_layout.addWidget(no_cl)
+
+                card_layout.addWidget(detail_widget)
+
+            def make_toggle(gid=gid):
+                def _toggle():
+                    if gid in self._ab_expanded_groups:
+                        self._ab_expanded_groups.discard(gid)
+                    else:
+                        self._ab_expanded_groups.add(gid)
+                    self._ab_update_groups_ui()
+                return _toggle
+
+            toggle_fn = make_toggle(gid)
+            toggle_lbl.mousePressEvent = lambda event: None
+            toggle_lbl.mouseReleaseEvent = lambda event, fn=toggle_fn: fn()
+            name_lbl.mousePressEvent = lambda event: None
+            name_lbl.mouseReleaseEvent = lambda event, fn=toggle_fn: fn()
+            info_text.mousePressEvent = lambda event: None
+            info_text.mouseReleaseEvent = lambda event, fn=toggle_fn: fn()
+
+            self._ab_groups_container.addWidget(card)
+
+    def _ab_group_paginate(self, group_id, direction):
+        for g in self._ab_groups:
+            if g["id"] == group_id:
+                g["_clients_page"] = g.get("_clients_page", 0) + direction
+                break
+        self._ab_update_groups_ui()
+
+    def _ab_edit_client_in_group(self, group_id, client_code):
+        group = next((g for g in self._ab_groups if g["id"] == group_id), None)
+        if not group:
+            return
+        client = next((c for c in group["clients"] if c["codigo"] == client_code), None)
+        if not client:
+            return
+        from PySide6.QtWidgets import QFormLayout
+        t = theme_manager.current()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Editar Cliente")
+        dlg.resize(380, 200)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        title = QLabel("Editar dados do cliente")
+        title.setStyleSheet(f"font-size: {t.FONT_LG}px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        fl = QFormLayout()
+        fl.setSpacing(t.SPACING_SM)
+        lbl_cod = QLabel(f"Código: {client['codigo']}")
+        lbl_cod.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary};")
+        fl.addRow(lbl_cod)
+
+        txt_nome = QLineEdit(client.get("nome", ""))
+        txt_nome.setStyleSheet(f"""
+            QLineEdit {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; padding: 7px; color: {t.text}; font-size: {t.FONT_MD}px; }}
+            QLineEdit:focus {{ border-color: {t.primary}; }}
+        """)
+        fl.addRow("Nome:", txt_nome)
+
+        txt_fone = QLineEdit(client.get("fone", "").strip())
+        txt_fone.setStyleSheet(txt_nome.styleSheet())
+        fl.addRow("Telefone:", txt_fone)
+        layout.addLayout(fl)
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+        btn_ok = QPushButton("Salvar")
+        btn_ok.setStyleSheet(f"""
+            QPushButton {{ background: {t.primary}; color: {t.selection_text}; border: none;
+                border-radius: {t.RADIUS_SM}px; padding: {t.SPACING_SM}px {t.SPACING_LG}px; font-size: {t.FONT_MD}px; font-weight: 700; }}
+            QPushButton:hover {{ background: {t.primary_hover}; }}
+        """)
+        btn_ok.clicked.connect(dlg.accept)
+        btn_row.addWidget(btn_ok)
+        layout.addLayout(btn_row)
+
+        btn_cancel.clicked.connect(dlg.reject)
+        if dlg.exec():
+            novo_nome = txt_nome.text().strip()
+            novo_fone = txt_fone.text().strip()
+            if novo_nome:
+                client["nome"] = novo_nome
+            if novo_fone:
+                client["fone"] = novo_fone
+            group["_has_unsaved"] = True
+            self._ab_update_groups_ui()
+
+    def _ab_remove_client_from_group(self, group_id, client_code):
+        group = None
+        for g in self._ab_groups:
+            if g["id"] == group_id:
+                group = g
+                break
+        if not group:
+            return
+        removed = None
+        for c in group["clients"]:
+            if c["codigo"] == client_code:
+                removed = c
+                break
+        if not removed:
+            return
+        group["clients"] = [c for c in group["clients"] if c["codigo"] != client_code]
+        if removed.get("config_id"):
+            group.setdefault("_removed_clients", []).append(removed)
+        group["_has_unsaved"] = True
+        self._ab_update_groups_ui()
+
+    def _ab_register_group(self, group_id):
+        group = next((g for g in self._ab_groups if g["id"] == group_id), None)
+        if not group:
+            show_error(self, "Erro", "Grupo não encontrado.")
+            return
+        if not group["clients"]:
+            show_error(self, "Erro", "Grupo sem clientes.")
+            return
+        if group.get("_has_unsaved"):
+            from PySide6.QtWidgets import QMessageBox
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Alterações não salvas")
+            msg.setText("Este grupo tem alterações não salvas.\nSalve antes de registrar?")
+            btn_save = msg.addButton("Salvar e Registrar", QMessageBox.AcceptRole)
+            msg.addButton("Cancelar", QMessageBox.RejectRole)
+            msg.setIcon(QMessageBox.Question)
+            msg.exec()
+            if msg.clickedButton() != btn_save:
+                return
+
+        from frontend.app.api.client_billing_api import (
+            register_group, update_group, create_config, delete_config
+        )
+
+        def _do():
+            if group.get("_has_unsaved"):
+                new_clients = [c for c in group["clients"] if c.get("_new") and not c.get("config_id")]
+                removed = group.get("_removed_clients", [])
+                tpl = group["template_data"]
+                api_token = ""
+                flow_id = ""
+                headers_list = tpl.get("headers", DEFAULT_HEADERS)
+                for h in headers_list:
+                    if isinstance(h, (list, tuple)) and len(h) >= 2:
+                        if h[0].lower() == "x-access-token":
+                            api_token = str(h[1])
+                        if h[0].lower() == "flow_id":
+                            flow_id = str(h[1])
+                if group["status"] in ("registered", "error") and (new_clients or removed):
+                    tpl_bt_id = tpl.get("id")
+                    for c in new_clients:
+                        try:
+                            payload = {
+                                "client_code": c["codigo"], "client_name": c["nome"],
+                                "client_phone": c["fone"],
+                                "template_name": tpl.get("name", ""),
+                                "template_method": tpl.get("method", "POST"),
+                                "template_url": tpl.get("url", ""),
+                                "template_headers": headers_list,
+                                "template_body": tpl.get("body", ""),
+                                "template_tag": tpl.get("tag", ""),
+                                "api_token": api_token, "flow_id": flow_id,
+                                "offset_days": group["offset_days"],
+                                "send_time": group["send_time"],
+                            }
+                            if tpl_bt_id:
+                                payload["billing_template_id"] = tpl_bt_id
+                            result = create_config(payload)
+                            c["config_id"] = result.get("id")
+                        except Exception:
+                            pass
+                    for c in removed:
+                        try:
+                            if c.get("config_id"):
+                                delete_config(c["config_id"])
+                        except Exception:
+                            pass
+                update_group(group_id, {
+                    "clients": [{"client_code": c["codigo"], "client_name": c["nome"],
+                                 "client_phone": c["fone"]} for c in group["clients"]]
+                })
+            result = register_group(group_id)
+            from frontend.app.api.client_billing_api import list_groups
+            updated = list_groups()
+            for ug in updated:
+                if str(ug["id"]) == group_id:
+                    return result, ug
+            return result, None
+
+        def _on_done(data):
+            result, updated = data
+            n_ok = result.get("success", 0)
+            n_err = len(result.get("errors", []))
+            if updated:
+                for g in self._ab_groups:
+                    if g["id"] == group_id:
+                        g["status"] = updated.get("status", "registered")
+                        g["error_messages"] = []
+                        for c in g["clients"]:
+                            for uc in updated.get("clients", []):
+                                if c["codigo"] == uc["client_code"]:
+                                    if uc.get("config_id"):
+                                        c["config_id"] = str(uc["config_id"])
+                                    break
+                        if g["status"] == "error":
+                            for c in g["clients"]:
+                                if not c.get("config_id"):
+                                    g["error_messages"].append(f"{c['nome']} - pendente")
+                        break
+            self._ab_update_groups_ui()
+            if n_err == 0:
+                show_success(self, "OK", f"Grupo registrado com {n_ok} cliente(s)!")
+            else:
+                show_error(self, "Registrado com erros",
+                           f"{n_ok} registrado(s), {n_err} falha(s).\n"
+                           + "\n".join(result.get("errors", [])))
+
+        def _on_error(e):
+            for g in self._ab_groups:
+                if g["id"] == group_id:
+                    g["status"] = "error"
+                    g["error_messages"] = [f"Erro ao registrar: {e}"]
+                    break
+            self._ab_update_groups_ui()
+            show_error(self, "Erro", f"Falha ao registrar grupo:\n{e}")
+
+        run_in_thread(_do, _on_done, _on_error, parent_window=self)
+
+    def _ab_save_group(self, group_id):
+        group = None
+        for g in self._ab_groups:
+            if g["id"] == group_id:
+                group = g
+                break
+        if not group:
+            return
+
+        from frontend.app.api.client_billing_api import create_config, delete_config, update_group
+
+        new_clients = [c for c in group["clients"] if c.get("_new") and not c.get("config_id")]
+        removed = group.get("_removed_clients", [])
+        is_registered = group["status"] in ("registered", "error")
+        needs_config_ops = is_registered and (new_clients or removed)
+
+        tpl = group["template_data"]
+        api_token = ""
+        flow_id = ""
+        headers_list = tpl.get("headers", DEFAULT_HEADERS)
+        for h in headers_list:
+            if isinstance(h, (list, tuple)) and len(h) >= 2:
+                if h[0].lower() == "x-access-token":
+                    api_token = str(h[1])
+                if h[0].lower() == "flow_id":
+                    flow_id = str(h[1])
+        tpl_bt_id = tpl.get("id")
+
+        def _do():
+            errors = []
+            if needs_config_ops:
+                for c in new_clients:
+                    try:
+                        payload = {
+
+                            "client_code": c["codigo"],
+                            "client_name": c["nome"],
+                            "client_phone": c["fone"],
+                            "template_name": tpl.get("name", ""),
+                            "template_method": tpl.get("method", "POST"),
+                            "template_url": tpl.get("url", ""),
+                            "template_headers": headers_list,
+                            "template_body": tpl.get("body", ""),
+                            "template_tag": tpl.get("tag", ""),
+                            "api_token": api_token,
+                            "flow_id": flow_id,
+                            "offset_days": group["offset_days"],
+                            "send_time": group["send_time"],
+                        }
+                        if tpl_bt_id:
+                            payload["billing_template_id"] = tpl_bt_id
+                        result = create_config(payload)
+                        c["config_id"] = result.get("id")
+                    except Exception as e:
+                        errors.append(f"{c.get('nome', '?')}: erro ao criar: {e}")
+                for c in removed:
+                    try:
+                        if c.get("config_id"):
+                            delete_config(c["config_id"])
+                    except Exception as e:
+                        errors.append(f"{c.get('nome', '?')}: erro ao remover: {e}")
+            try:
+                update_group(group_id, {
+                    "clients": [{"client_code": c["codigo"], "client_name": c["nome"],
+                                 "client_phone": c["fone"]} for c in group["clients"]]
+                })
+            except Exception as e:
+                errors.append(f"erro ao salvar grupo: {e}")
+            return errors
+        def _on_done(errors):
+            for c in group["clients"]:
+                c.pop("_new", None)
+            group["_removed_clients"] = []
+            group["_has_unsaved"] = False
+
+            if errors:
+                group["status"] = "error"
+                group["error_messages"] = errors
+            else:
+                if group["status"] == "error":
+                    group["status"] = "registered"
+                    group["error_messages"] = []
+
+            self._ab_update_groups_ui()
+            if errors:
+                show_error(self, "Atenção", "Alterações salvas com alguns erros:\n" + "\n".join(errors))
+            else:
+                show_success(self, "OK", "Alterações salvas com sucesso!")
+
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao salvar alterações:\n{e}")
+
+        run_in_thread(_do, _on_done, _on_error, parent_window=self)
+
+    def _ab_remover_grupo(self, group_id):
+        from frontend.app.api.client_billing_api import delete_group
+        def _do():
+            return delete_group(group_id)
+        def _on_result(_):
+            for i, g in enumerate(self._ab_groups):
+                if g["id"] == group_id:
+                    del self._ab_groups[i]
+                    break
+            self._ab_update_groups_ui()
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao remover grupo:\n{e}")
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_edit_group_dialog(self, group_id):
+        group = next((g for g in self._ab_groups if g["id"] == group_id), None)
+        if not group:
+            return
+        t = theme_manager.current()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Editar Grupo")
+        dlg.resize(480, 380)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(t.SPACING_LG, t.SPACING_LG, t.SPACING_LG, t.SPACING_LG)
+        layout.setSpacing(t.SPACING_MD)
+
+        title = QLabel("Editar Configurações do Grupo")
+        title.setStyleSheet(f"font-size: {t.FONT_XL}px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+
+        txt_name = QLineEdit(group["name"])
+        txt_name.setStyleSheet(f"QLineEdit {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; padding: 8px 12px; color: {t.text}; font-size: {t.FONT_MD}px; }}")
+
+        cmb_template = QComboBox()
+        cmb_template.setMinimumWidth(200)
+        cmb_template.setStyleSheet(f"QComboBox {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; padding: 7px 12px; color: {t.text}; font-size: {t.FONT_MD}px; min-height: 20px; }} QComboBox::drop-down {{ border: none; width: 28px; }} QComboBox QAbstractItemView {{ background: {t.surface}; color: {t.text}; selection-background-color: {t.selection}; font-size: {t.FONT_MD}px; }}")
+
+        templates = self._load_templates()
+        current_tpl = group["template_data"]
+        sel_idx = 0
+        for i, tpl in enumerate(templates):
+            tag = tpl.get("tag", "")
+            label = f"{tpl.get('name', 'Sem nome')}  [{tag}]" if tag else tpl.get("name", "Sem nome")
+            cmb_template.addItem(label, tpl)
+            if tpl.get("name") == current_tpl.get("name"):
+                sel_idx = i
+        cmb_template.setCurrentIndex(sel_idx)
+
+        spin_offset = QSpinBox()
+        spin_offset.setRange(-90, 90)
+        spin_offset.setValue(group["offset_days"])
+        spin_offset.setStyleSheet(f"QSpinBox {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; padding: 6px 10px; color: {t.text}; font-size: {t.FONT_MD}px; min-height: 20px; }}")
+
+        from PySide6.QtWidgets import QTimeEdit
+        from PySide6.QtCore import QTime
+        time_edit = QTimeEdit()
+        parts = group["send_time"].split(":")
+        time_edit.setTime(QTime(int(parts[0]), int(parts[1])))
+        time_edit.setDisplayFormat("HH:mm")
+        time_edit.setStyleSheet(f"QTimeEdit {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; padding: 7px 12px; color: {t.text}; font-size: {t.FONT_MD}px; min-height: 20px; }} QTimeEdit::drop-down {{ border: none; width: 24px; }}")
+
+        from PySide6.QtWidgets import QFormLayout
+        fl = QFormLayout()
+        fl.setSpacing(t.SPACING_SM)
+        fl.setLabelAlignment(Qt.AlignRight)
+        fl.addRow("Nome do Grupo:", txt_name)
+        fl.addRow("Template:", cmb_template)
+        fl.addRow("Offset (dias):", spin_offset)
+        fl.addRow("Horário:", time_edit)
+        layout.addLayout(fl)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setStyleSheet(f"QPushButton {{ background: transparent; border: 1px solid {t.border}; border-radius: {t.RADIUS_SM}px; padding: 8px 20px; color: {t.text}; font-size: {t.FONT_MD}px; font-weight: 600; }} QPushButton:hover {{ background: {t.surface}; }}")
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+
+        btn_save = QPushButton("Salvar")
+        btn_save.setProperty("primary", True)
+        btn_save.setStyleSheet(f"QPushButton[primary=\"true\"] {{ background: {t.primary}; color: {t.selection_text}; border: none; border-radius: {t.RADIUS_SM}px; padding: 8px 24px; font-size: {t.FONT_MD}px; font-weight: 700; }} QPushButton[primary=\"true\"]:hover {{ background: {t.primary_hover}; }}")
+        btn_row.addWidget(btn_save)
+        layout.addLayout(btn_row)
+
+        def _salvar():
+            template_data = cmb_template.currentData()
+            if not template_data:
+                show_error(self, "Erro", "Selecione um template.")
+                return
+            api_token, flow_id, headers_list = self._ab_extract_template_data(template_data)
+
+            from frontend.app.api.client_billing_api import update_group as api_update_group
+            payload = {
+                "name": txt_name.text().strip(),
+                "template_name": template_data.get("name", ""),
+                "template_method": template_data.get("method", "POST"),
+                "template_url": template_data.get("url", ""),
+                "template_headers": headers_list,
+                "template_body": template_data.get("body", ""),
+                "template_tag": template_data.get("tag", ""),
+                "api_token": api_token,
+                "flow_id": flow_id,
+                "offset_days": spin_offset.value(),
+                "send_time": time_edit.time().toString("HH:mm"),
+            }
+            tpl_id = template_data.get("id")
+            if tpl_id:
+                payload["billing_template_id"] = tpl_id
+            def _do():
+                return api_update_group(group_id, payload)
+            def _on_result(data):
+                group["name"] = txt_name.text().strip()
+                group["template_data"] = template_data
+                group["offset_days"] = spin_offset.value()
+                group["send_time"] = time_edit.time().toString("HH:mm")
+                dlg.accept()
+                show_success(self, "OK", "Grupo atualizado com sucesso!")
+                self._ab_update_groups_ui()
+            def _on_error(e):
+                show_error(self, "Erro", f"Falha ao atualizar grupo:\n{e}")
+            run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+        btn_save.clicked.connect(_salvar)
+        btn_cancel.clicked.connect(dlg.reject)
+        dlg.exec()
+
+    def _ab_testar_grupo(self, group_id):
+        from frontend.app.api.client_billing_api import test_group
+        def _do():
+            return test_group(group_id)
+        def _on_result(data):
+            tested = data.get("tested", 0)
+            errors = data.get("errors", [])
+            for g in self._ab_groups:
+                if g["id"] == group_id:
+                    if errors:
+                        g["error_messages"] = errors[:5]
+                        g["status"] = "error"
+                    break
+            self._ab_update_groups_ui()
+            if errors:
+                show_error(self, "Teste Concluído",
+                           f"{tested} enviado(s), {len(errors)} erro(s).\n" + "\n".join(errors[:5]))
+            else:
+                show_success(self, "Teste Concluído", f"{tested} cliente(s) testado(s) com sucesso!")
+        def _on_error(e):
+            show_error(self, "Erro", f"Falha ao testar grupo:\n{e}")
+        run_in_thread(_do, _on_result, _on_error, parent_window=self)
+
+    def _ab_show_error_popup(self, group_id):
+        group = None
+        for g in self._ab_groups:
+            if g["id"] == group_id:
+                group = g
+                break
+        if not group:
+            return
+        t = theme_manager.current()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Erros - {group['name']}")
+        dlg.resize(480, 300)
+        dlg.setStyleSheet(f"QDialog {{ background: {t.bg}; color: {t.text}; }}")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        title = QLabel(f"Erros no grupo '{group['name']}'")
+        title.setStyleSheet(f"font-size: {t.FONT_LG}px; font-weight: 800; color: {t.text};")
+        layout.addWidget(title)
+        errors = group.get("error_messages", [])
+        if errors:
+            for err in errors:
+                err_row = QWidget()
+                err_row.setStyleSheet("background: transparent;")
+                el = QHBoxLayout(err_row)
+                el.setContentsMargins(0, 2, 0, 2)
+                el.setSpacing(6)
+                err_pix = self._svg_to_pixmap(SVG_ALERT, 14, t.danger)
+                err_icon = QLabel()
+                err_icon.setPixmap(err_pix)
+                err_icon.setStyleSheet("border: none; background: transparent;")
+                el.addWidget(err_icon)
+                err_txt = QLabel(err)
+                err_txt.setWordWrap(True)
+                err_txt.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.danger}; background: transparent; border: none;")
+                el.addWidget(err_txt, 1)
+                layout.addWidget(err_row)
+        else:
+            no_err = QLabel("Nenhum erro registrado.")
+            no_err.setStyleSheet(f"font-size: {t.FONT_SM}px; color: {t.text_secondary}; padding: {t.SPACING_MD}px;")
+            no_err.setAlignment(Qt.AlignCenter)
+            layout.addWidget(no_err)
+        btn_close = QPushButton("Fechar")
+        btn_close.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid {t.border};
+                border-radius: {t.RADIUS_SM}px; color: {t.text}; padding: {t.SPACING_SM}px 20px; font-size: {t.FONT_MD}px; font-weight: 600; }}
+            QPushButton:hover {{ background: {t.surface}; }}
+        """)
+        btn_close.clicked.connect(dlg.accept)
+        br = QHBoxLayout()
+        br.addStretch()
+        br.addWidget(btn_close)
+        layout.addLayout(br)
+        dlg.exec()
+
+    def _ab_is_in_any_group(self, codigo, exclude_group_id=None):
+        for g in self._ab_groups:
+            if exclude_group_id and g["id"] == exclude_group_id:
+                continue
+            for c in g["clients"]:
+                if c["codigo"] == codigo:
+                    return True
+        return False
+
+    def _refresh_auto_billing(self):
+        self._ab_load_groups()
 
     # ================== REFRESH ==================
 

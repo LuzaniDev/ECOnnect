@@ -13,7 +13,9 @@ from .database import engine, Base, async_session
 from .routers import auth, templates, requests, users, integrations, audit, company_config, sql_variables, dashboard, cobranca
 from .models.integration import IntegrationConfig
 from .models.audit_log import AuditLog
+from .models.client_billing import ClientBillingConfig
 from .services.integration_service import IntegrationService
+from .services.client_billing_service import ClientBillingService
 
 
 def _backend_log(msg: str, level: str = "INFO") -> None:
@@ -299,6 +301,161 @@ async def _run_migrations():
             await session.rollback()
             _backend_log(f"[MIGRATION] Erro migration meta_messages: {e}", "WARNING")
 
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = 'client_billing_configs'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE client_billing_configs (
+                        id UUID PRIMARY KEY,
+                        client_code VARCHAR(20) NOT NULL,
+                        client_name VARCHAR(200) NOT NULL,
+                        client_phone VARCHAR(20) NOT NULL,
+                        eco_empresa VARCHAR(20) NOT NULL,
+                        template_name VARCHAR(100) NOT NULL,
+                        template_method VARCHAR(10) DEFAULT 'POST',
+                        template_url VARCHAR(500) NOT NULL,
+                        template_headers JSON,
+                        template_body TEXT,
+                        template_tag VARCHAR(100),
+                        api_token VARCHAR(255) NOT NULL,
+                        flow_id VARCHAR(50) DEFAULT '',
+                        offset_days INTEGER DEFAULT 0,
+                        send_time VARCHAR(5) DEFAULT '09:00',
+                        is_active BOOLEAN DEFAULT TRUE,
+                        last_pendencia_vencimento DATE,
+                        last_sent_at TIMESTAMP,
+                        next_check_date DATE,
+                        created_by UUID REFERENCES users(id),
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text("CREATE INDEX ix_client_billing_eco_empresa ON client_billing_configs (eco_empresa)"))
+                _backend_log("[MIGRATION] Tabela client_billing_configs criada")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration client_billing_configs: {e}", "WARNING")
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = 'billing_groups'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE billing_groups (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(200) NOT NULL,
+                        eco_empresa VARCHAR(20) NOT NULL,
+                        template_name VARCHAR(100) NOT NULL,
+                        template_method VARCHAR(10) DEFAULT 'POST',
+                        template_url VARCHAR(500) NOT NULL,
+                        template_headers JSON,
+                        template_body TEXT,
+                        template_tag VARCHAR(100),
+                        api_token VARCHAR(255) NOT NULL,
+                        flow_id VARCHAR(50) DEFAULT '',
+                        offset_days INTEGER DEFAULT 0,
+                        send_time VARCHAR(5) DEFAULT '09:00',
+                        status VARCHAR(20) DEFAULT 'pending',
+                        created_by UUID REFERENCES users(id),
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text("CREATE INDEX ix_billing_groups_eco ON billing_groups (eco_empresa)"))
+                _backend_log("[MIGRATION] Tabela billing_groups criada")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration billing_groups: {e}", "WARNING")
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = 'billing_group_clients'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE billing_group_clients (
+                        id UUID PRIMARY KEY,
+                        group_id UUID REFERENCES billing_groups(id) ON DELETE CASCADE NOT NULL,
+                        client_code VARCHAR(20) NOT NULL,
+                        client_name VARCHAR(200) NOT NULL,
+                        client_phone VARCHAR(20) NOT NULL,
+                        config_id UUID REFERENCES client_billing_configs(id),
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text("CREATE INDEX ix_billing_group_clients_group ON billing_group_clients (group_id)"))
+                _backend_log("[MIGRATION] Tabela billing_group_clients criada")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration billing_group_clients: {e}", "WARNING")
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables WHERE table_name = 'billing_templates'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("""
+                    CREATE TABLE billing_templates (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        method VARCHAR(10) DEFAULT 'POST',
+                        url VARCHAR(500) NOT NULL,
+                        headers JSON,
+                        body TEXT,
+                        tag VARCHAR(100),
+                        api_token VARCHAR(255) NOT NULL,
+                        flow_id VARCHAR(50) DEFAULT '',
+                        offset_days INTEGER DEFAULT 0,
+                        send_time VARCHAR(5) DEFAULT '09:00',
+                        eco_empresa VARCHAR(20),
+                        created_by UUID REFERENCES users(id),
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                await session.execute(text("CREATE INDEX ix_billing_templates_eco ON billing_templates (eco_empresa)"))
+                _backend_log("[MIGRATION] Tabela billing_templates criada")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration billing_templates: {e}", "WARNING")
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'billing_groups' AND column_name = 'billing_template_id'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("ALTER TABLE billing_groups ADD COLUMN billing_template_id UUID REFERENCES billing_templates(id)"))
+                _backend_log("[MIGRATION] Coluna billing_template_id adicionada em billing_groups")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration billing_groups billing_template_id: {e}", "WARNING")
+
+    async with async_session() as session:
+        try:
+            result = await session.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'client_billing_configs' AND column_name = 'billing_template_id'"
+            ))
+            if not result.fetchone():
+                await session.execute(text("ALTER TABLE client_billing_configs ADD COLUMN billing_template_id UUID REFERENCES billing_templates(id)"))
+                _backend_log("[MIGRATION] Coluna billing_template_id adicionada em client_billing_configs")
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            _backend_log(f"[MIGRATION] Erro migration client_billing_configs billing_template_id: {e}", "WARNING")
+
     _backend_log("[MIGRATION] _run_migrations() concluido")
 
 
@@ -336,7 +493,15 @@ async def _scheduler_loop():
                     except Exception as e:
                         _backend_log(f"[Scheduler] Erro ao executar integracao {config.id}: {e}", "ERROR")
         except Exception as e:
-            _backend_log(f"[Scheduler] Erro no ciclo: {e}", "ERROR")
+            _backend_log(f"[Scheduler] Erro no ciclo integracoes: {e}", "ERROR")
+
+        try:
+            async with async_session() as session:
+                cb_service = ClientBillingService(session)
+                await cb_service.check_due_configs()
+        except Exception as e:
+            _backend_log(f"[Scheduler] Erro no ciclo client_billing: {e}", "ERROR")
+
         await asyncio.sleep(SCHEDULER_INTERVAL)
 
 
@@ -478,8 +643,12 @@ app.include_router(cobranca.router)
 
 from .routers import meta as meta_router
 from .routers import webhook as webhook_router
+from .routers import client_billing as client_billing_router
+from .routers import billing_groups as billing_groups_router
 app.include_router(meta_router.router)
 app.include_router(webhook_router.router)
+app.include_router(client_billing_router.router)
+app.include_router(billing_groups_router.router)
 
 _backend_log("[APP] Todos os routers registrados")
 

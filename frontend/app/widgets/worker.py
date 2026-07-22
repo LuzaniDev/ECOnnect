@@ -1,6 +1,7 @@
 import sys
 import threading
 from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QApplication
 
 
 class _SignalRelay(QObject):
@@ -11,22 +12,53 @@ class _SignalRelay(QObject):
 _keepalive = []
 
 
-def run_in_thread(fn, on_success, on_error=None, *args, **kwargs):
+def run_in_thread(fn, on_success, on_error=None, parent_window=None, *args, **kwargs):
+    from frontend.app.widgets.loading_popup import LoadingPopup
+
+    loading = None
+    if parent_window is not None:
+        loading = LoadingPopup(parent_window)
+        loading.show()
+        QApplication.processEvents()
+
     relay = _SignalRelay()
-    relay.success.connect(on_success)
-    if on_error:
-        relay.error.connect(on_error)
-    else:
-        from frontend.app.core.logger import logger
-        relay.error.connect(lambda e: logger.error("WORKER", str(e), line=16))
+    closed = [False]
 
-    _keepalive.append(relay)
+    def _close_loading():
+        if closed[0]:
+            return
+        closed[0] = True
+        if loading is not None:
+            try:
+                loading.hide()
+                loading.deleteLater()
+            except RuntimeError:
+                pass
 
-    def _cleanup():
+    def _cleanup_relay():
         try:
             _keepalive.remove(relay)
         except ValueError:
             pass
+
+    def _wrapped_success(result):
+        _close_loading()
+        _cleanup_relay()
+        on_success(result)
+
+    def _wrapped_error(msg):
+        _close_loading()
+        _cleanup_relay()
+        if on_error:
+            on_error(msg)
+        else:
+            from frontend.app.core.logger import logger
+            logger.error("WORKER", msg, line=16)
+
+    relay.success.connect(_wrapped_success)
+    relay.error.connect(_wrapped_error)
+
+    _keepalive.append(relay)
 
     def _run():
         try:
@@ -37,11 +69,6 @@ def run_in_thread(fn, on_success, on_error=None, *args, **kwargs):
                 relay.error.emit(str(e))
             except Exception:
                 print(f"[WORKER] Erro no relay.error.emit: {e}", file=sys.stderr)
-
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-    threading.Timer(5.0, _cleanup).start()
-    return thread
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
